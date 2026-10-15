@@ -69,7 +69,8 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
   rows.push(['Performance goal', goal?.label || a.goal]);
   if (!ctx.isCatalog && goal?.pixel) {
     rows.push(['Conversion event', CONVERSION_EVENTS.find((e) => e.key === (goal.fixedEvent || a.event))?.label || a.event]);
-    rows.push(['Pixel', pixels.find((p) => p.id === a.pixelId)?.name || a.pixelId]);
+    const px = pixels.find((p) => p.id === a.pixelId);
+    rows.push(['Pixel', px ? `${px.name} (${px.id})` : a.pixelId]);
   }
   if (usesAudience) {
     rows.push(['Audience', a.audienceType === 'ADVANTAGE' ? 'Advantage+ Audience' : a.audienceType === 'INTEREST' ? `Interests: ${a.interests.map((i) => i.name).join(', ')}` : a.audienceType === 'SAVED' ? 'Saved audience' : 'Same as original ad set']);

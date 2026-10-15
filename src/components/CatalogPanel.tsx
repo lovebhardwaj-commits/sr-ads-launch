@@ -153,7 +153,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pi
       </Field>
       <Field label="Pixel / dataset" hint="The pixel that sends ViewContent, AddToCart and Purchase from your store.">
         {pixelsLoading ? <Loading text="Loading pixels…" /> : (
-          <Select value={pixelId} onChange={onPixel} placeholder="Select a pixel..." options={pixels.map((p) => ({ key: p.id, label: p.name }))} />
+          <Select value={pixelId} onChange={onPixel} placeholder="Select a pixel..." options={pixels.map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
         )}
       </Field>
 
