@@ -44,7 +44,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
   const pixels = useAsync<{ id: string; name: string }[]>(`pixels-${account.id}`, () => apiGet('pixels', { account: account.id }));
   const retarget = ctx.isCatalog && a.catalogAudience !== 'BROAD';
   const saved = useAsync<{ id: string; name: string }[]>(
-    !retarget && a.audienceType === 'SAVED' ? `saved-${account.id}` : null,
+    !retarget && (a.audienceType === 'SAVED' || a.audienceType === 'INTEREST') ? `saved-${account.id}` : null,
     () => apiGet('saved-audiences', { account: account.id }),
   );
   const productSets = useAsync<ProductSet[]>(ctx.isCatalog && ctx.catalogId ? `sets-${ctx.catalogId}` : null, () => apiGet('product-sets', { catalog: ctx.catalogId }));
@@ -95,6 +95,46 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
 
   const upsellOrCross = retarget && (a.retargetPreset === 'UPSELL' || a.retargetPreset === 'CROSS_SELL');
   const setOptions = (productSets.data || []).map((s) => ({ key: s.id, label: `${s.name}${s.product_count != null ? ` (${s.product_count.toLocaleString('en-IN')} products)` : ''}` }));
+
+  const locationField = (
+    <TagSearch<GeoItem>
+      type="adgeolocation"
+      placeholder="Search countries, states, cities..."
+      selected={a.locations}
+      onAdd={(g) => up('adset', { locations: [...a.locations, g] })}
+      onRemove={(g) => up('adset', { locations: a.locations.filter((x) => x.key !== g.key) })}
+      getKey={(g) => `${g.type}-${g.key}`}
+      getLabel={(g) => g.name}
+      toItem={(r) => ({ key: String(r.key), name: r.type === 'country' ? r.name : `${r.name}${r.region ? `, ${r.region}` : ''}`, type: r.type, country_code: r.country_code })}
+      describe={(r) => [r.type === 'region' ? 'State' : r.type === 'city' ? 'City' : 'Country', r.country_name].filter(Boolean).join(' · ')}
+    />
+  );
+  const languageField = (
+    <TagSearch<LocaleItem>
+      type="adlocale"
+      placeholder="Search languages... (leave empty for all)"
+      selected={a.locales}
+      onAdd={(l) => up('adset', { locales: [...a.locales, l] })}
+      onRemove={(l) => up('adset', { locales: a.locales.filter((x) => x.key !== l.key) })}
+      getKey={(l) => String(l.key)}
+      getLabel={(l) => l.name}
+      toItem={(r) => ({ key: Number(r.key), name: r.name })}
+    />
+  );
+  const genderField = <Segmented value={a.gender} onChange={(v) => up('adset', { gender: v })} options={[{ key: 'ALL', label: 'All genders' }, { key: 'MALE', label: 'Men' }, { key: 'FEMALE', label: 'Women' }]} />;
+  const interestField = (
+    <TagSearch<InterestItem>
+      type="adinterest"
+      placeholder="Add demographics, interests or behaviors"
+      selected={a.interests}
+      onAdd={(i) => up('adset', { interests: [...a.interests, i] })}
+      onRemove={(i) => up('adset', { interests: a.interests.filter((x) => x.id !== i.id) })}
+      getKey={(i) => i.id}
+      getLabel={(i) => i.name}
+      toItem={(r) => ({ id: String(r.id), name: r.name })}
+      describe={(r) => (r.audience_size_upper_bound ? `${Number(r.audience_size_upper_bound).toLocaleString('en-IN')} people` : '')}
+    />
+  );
 
   return (
     <>
@@ -185,36 +225,74 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
         </>
       ) : null}
 
-      {/* ── Ad set ── */}
+      {/* ── Ad set (Ads Manager sections: Conversion, Budget & schedule, Audience, Placements) ── */}
       <h2 className="section-title">Ad Set</h2>
       <div className="card">
         <Field label="Ad set name">
           <TextInput value={a.name} onChange={(e) => up('adset', { name: e.target.value })} placeholder={ctx.isCatalog ? 'e.g. Catalog - Viewed or added to cart 14d' : 'e.g. Advantage+ Audience - Broad'} />
         </Field>
 
+        {/* Conversion */}
+        <div className="subhead">Conversion</div>
+        {goal.destination === 'WEBSITE' || ctx.isCatalog ? (
+          <Field label="Conversion location" hint="Other conversion locations (app, messaging, calls) aren't supported in this launcher.">
+            <Segmented value="WEBSITE" onChange={() => undefined} options={[{ key: 'WEBSITE', label: 'Website' }]} />
+          </Field>
+        ) : null}
+        <Field label="Performance goal">
+          <Select value={goal.key} onChange={(v) => up('adset', { goal: v })} options={goals} />
+        </Field>
+        {goal.pixel || ctx.isCatalog ? (
+          <Field label="Dataset" hint={ctx.isCatalog ? 'Must be linked to the catalog; the Catalog card checks this.' : undefined}>
+            {pixels.loading ? <Loading text="Loading datasets…" /> : pixels.error ? <div className="notice bad">{pixels.error}</div> : (
+              <Select value={a.pixelId} onChange={(v) => up('adset', { pixelId: v })} placeholder="Select a dataset..." options={(pixels.data || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
+            )}
+          </Field>
+        ) : null}
+        {goal.pixel ? (
+          <Field label="Conversion event">
+            <Select value={goal.fixedEvent || a.event} disabled={!!goal.fixedEvent} onChange={(v) => up('adset', { event: v })} options={CONVERSION_EVENTS} />
+          </Field>
+        ) : null}
+        {goal.attribution ? (
+          <Field label="Attribution setting" hint="Some ad accounts lock this at the account level — if so, Facebook's own rejection message shows up at launch time.">
+            <Select value={a.attribution} onChange={(v) => up('adset', { attribution: v })} options={ATTRIBUTION} />
+          </Field>
+        ) : null}
+
+        {/* Budget & schedule */}
+        <div className="subhead">Budget &amp; schedule</div>
         <BudgetField
           level="ADSET"
-          label="Ad set budget"
+          label="Budget"
           hint={ctx.needsCampaign ? 'Leave empty to use a campaign budget instead.' : undefined}
           budget={b}
           onChange={setBudget}
           symbol={sym}
           disabledReason={adsetBudgetReason}
         />
+        <div className="row field">
+          <Field label="Start date" hint="Leave empty to start as soon as it's published.">
+            <TextInput type="datetime-local" value={a.startTime} onChange={(e) => up('adset', { startTime: e.target.value })} />
+          </Field>
+          <Field label={b.type === 'LIFETIME' ? 'End date' : 'End date (optional)'} hint={b.type === 'LIFETIME' ? 'Required with a lifetime budget.' : 'Leave empty to run continuously.'}>
+            <TextInput type="datetime-local" value={b.endDate} onChange={(e) => setBudget({ endDate: e.target.value })} />
+          </Field>
+        </div>
 
+        {/* Audience */}
+        <div className="subhead">Audience</div>
         {ctx.isCatalog ? (
           <div className="subcard">
-            <div className="label strong" style={{ marginBottom: 10 }}>Catalog audience · {setOptions.find((s) => s.key === a.productSetId)?.label || 'pick a product set in the Catalog card'}</div>
-            <Field label="Audience">
-              <Segmented
-                value={a.catalogAudience}
-                onChange={(v) => up('adset', { catalogAudience: v })}
-                options={[
-                  { key: 'RETARGET', label: 'Retarget ads to people who interacted with your products' },
-                  { key: 'BROAD', label: 'Broad audience' },
-                ]}
-              />
-            </Field>
+            <div className="label strong" style={{ marginBottom: 10 }}>Catalog · {setOptions.find((s) => s.key === a.productSetId)?.label || 'pick a product set in the Catalog card'}</div>
+            <Segmented
+              value={a.catalogAudience}
+              onChange={(v) => up('adset', { catalogAudience: v })}
+              options={[
+                { key: 'RETARGET', label: 'Retarget ads to people who interacted with your products' },
+                { key: 'BROAD', label: 'Broad audience' },
+              ]}
+            />
             {retarget ? (
               <>
                 <Field label="Retargeting option">
@@ -255,33 +333,15 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
           </div>
         ) : null}
 
-        <Field label="Performance goal">
-          <Select value={goal.key} onChange={(v) => up('adset', { goal: v })} options={goals} />
-        </Field>
-
-        {goal.pixel ? (
-          <Field label="Conversion event">
-            <Select value={goal.fixedEvent || a.event} disabled={!!goal.fixedEvent} onChange={(v) => up('adset', { event: v })} options={CONVERSION_EVENTS} />
-          </Field>
-        ) : null}
-        {goal.pixel || ctx.isCatalog ? (
-          <Field label="Pixel / dataset" hint={ctx.isCatalog ? 'Must be linked to the catalog; the Catalog card checks this.' : undefined}>
-            {pixels.loading ? <Loading text="Loading pixels…" /> : pixels.error ? <div className="notice bad">{pixels.error}</div> : (
-              <Select value={a.pixelId} onChange={(v) => up('adset', { pixelId: v })} placeholder="Select a pixel..." options={(pixels.data || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
-            )}
-          </Field>
-        ) : null}
-
         {!retarget ? (
-          <Field label="Audience type">
+          <Field>
             <Segmented
-              value={a.audienceType}
-              onChange={(v) => up('adset', { audienceType: v })}
+              value={a.audienceType === 'ADVANTAGE' ? 'ADVANTAGE' : a.audienceType === 'SOURCE' ? 'SOURCE' : 'ORIGINAL'}
+              onChange={(v) => up('adset', v === 'ADVANTAGE' ? { audienceType: 'ADVANTAGE', ageMin: Math.min(a.ageMin, 25) } : v === 'SOURCE' ? { audienceType: 'SOURCE' } : { audienceType: a.savedAudienceId ? 'SAVED' : 'INTEREST' })}
               options={[
-                { key: 'ADVANTAGE', label: 'Advantage+ Audience' },
-                { key: 'INTEREST', label: 'Interest-based', disabled: advantagePlus, title: advantagePlus ? 'Not available with Advantage+ Shopping' : undefined },
-                { key: 'SAVED', label: 'Saved Audience', disabled: advantagePlus, title: advantagePlus ? 'Not available with Advantage+ Shopping' : undefined },
-                ...(source && a.audienceType === 'SOURCE' ? [{ key: 'SOURCE' as const, label: 'Same as original' }] : []),
+                { key: 'ADVANTAGE', label: 'Advantage+ audience' },
+                { key: 'ORIGINAL', label: 'Original audience options', disabled: advantagePlus, title: advantagePlus ? 'Not available with Advantage+ Shopping' : undefined },
+                ...(source && a.audienceType === 'SOURCE' ? [{ key: 'SOURCE', label: 'Same as original ad set' }] : []),
               ]}
             />
           </Field>
@@ -291,81 +351,68 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
           <p className="hint">Keeps the original ad set&apos;s custom audiences, lookalikes and exclusions. Location, age, gender and language below still apply.</p>
         ) : null}
 
-        {!retarget && a.audienceType === 'INTEREST' ? (
-          <Field label="Interests">
-            <TagSearch<InterestItem>
-              type="adinterest"
-              placeholder="Search interests, e.g. Ayurveda, skincare…"
-              selected={a.interests}
-              onAdd={(i) => up('adset', { interests: [...a.interests, i] })}
-              onRemove={(i) => up('adset', { interests: a.interests.filter((x) => x.id !== i.id) })}
-              getKey={(i) => i.id}
-              getLabel={(i) => i.name}
-              toItem={(r) => ({ id: String(r.id), name: r.name })}
-              describe={(r) => (r.audience_size_upper_bound ? `${Number(r.audience_size_upper_bound).toLocaleString('en-IN')} people` : '')}
-            />
-          </Field>
-        ) : null}
-
-        {!retarget && a.audienceType === 'SAVED' ? (
-          <Field label="Saved audience" hint="The saved audience's own location, age and gender are used.">
+        {!retarget && (a.audienceType === 'INTEREST' || a.audienceType === 'SAVED') ? (
+          <Field label="Use saved audience">
             {saved.loading ? <Loading text="Loading saved audiences…" /> : saved.error ? <div className="notice bad">{saved.error}</div> : (
-              <Select value={a.savedAudienceId} onChange={(v) => up('adset', { savedAudienceId: v })} placeholder="Select a saved audience..." options={(saved.data || []).map((s) => ({ key: s.id, label: s.name }))} />
+              <Select
+                value={a.savedAudienceId}
+                onChange={(v) => up('adset', { savedAudienceId: v, audienceType: v ? 'SAVED' : 'INTEREST' })}
+                options={[{ key: '', label: 'None' }, ...(saved.data || []).map((s) => ({ key: s.id, label: s.name }))]}
+              />
             )}
           </Field>
         ) : null}
+        {!retarget && a.audienceType === 'SAVED' ? <p className="hint">The saved audience&apos;s own location, age, gender and detailed targeting are used.</p> : null}
 
-        {retarget || a.audienceType !== 'SAVED' ? (
+        {!retarget && a.audienceType === 'ADVANTAGE' ? (
           <>
-            <Field label="Location targeting">
-              <TagSearch<GeoItem>
-                type="adgeolocation"
-                placeholder="Search countries, states, cities..."
-                selected={a.locations}
-                onAdd={(g) => up('adset', { locations: [...a.locations, g] })}
-                onRemove={(g) => up('adset', { locations: a.locations.filter((x) => x.key !== g.key) })}
-                getKey={(g) => `${g.type}-${g.key}`}
-                getLabel={(g) => g.name}
-                toItem={(r) => ({ key: String(r.key), name: r.type === 'country' ? r.name : `${r.name}${r.region ? `, ${r.region}` : ''}`, type: r.type, country_code: r.country_code })}
-                describe={(r) => [r.type === 'region' ? 'State' : r.type === 'city' ? 'City' : 'Country', r.country_name].filter(Boolean).join(' · ')}
-              />
+            <div className="label strong" style={{ marginTop: 14 }}>Audience controls</div>
+            <Field label="Locations">{locationField}</Field>
+            <Field label="Minimum age" hint="Meta won't show ads to anyone younger. Advantage+ audience allows up to 25.">
+              <Select value={String(Math.min(a.ageMin, 25))} onChange={(v) => up('adset', { ageMin: Number(v) })} options={AGES.filter((n) => n <= 25).map((n) => ({ key: String(n), label: String(n) }))} />
             </Field>
+            <Field label="Languages">{languageField}</Field>
+            <div className="label strong" style={{ marginTop: 18 }}>Audience suggestion (optional)</div>
+            <p className="hint" style={{ marginTop: 0 }}>Meta starts with these, then looks beyond them when it finds people likely to convert.</p>
             <div className="row field">
-              <Field label="Min age">
-                <Select value={String(a.ageMin)} onChange={(v) => up('adset', { ageMin: Number(v) })} options={AGES.filter((n) => n < 65).map((n) => ({ key: String(n), label: String(n) }))} />
+              <Field label="Age">
+                <Select value={String(Math.max(a.ageMin, 18))} disabled onChange={() => undefined} options={[{ key: String(Math.max(a.ageMin, 18)), label: String(Math.max(a.ageMin, 18)) }]} />
               </Field>
-              <Field label="Max age">
-                <Select value={String(a.ageMax)} onChange={(v) => up('adset', { ageMax: Number(v) })} options={AGES.map((n) => ({ key: String(n), label: n === 65 ? '65+' : String(n) }))} />
+              <Field label="to">
+                <Select value={String(a.ageMax)} onChange={(v) => up('adset', { ageMax: Number(v) })} options={AGES.filter((n) => n >= a.ageMin).map((n) => ({ key: String(n), label: n === 65 ? '65+' : String(n) }))} />
               </Field>
             </div>
-            {!retarget && a.audienceType === 'ADVANTAGE' && (a.ageMax < 65 || a.gender !== 'ALL' || a.ageMin > 25) ? (
-              <p className="hint">With Advantage+ Audience, max age and gender are suggestions, not limits, and min age can be at most 25.</p>
-            ) : null}
-            <Field label="Gender">
-              <Segmented value={a.gender} onChange={(v) => up('adset', { gender: v })} options={[{ key: 'ALL', label: 'All' }, { key: 'MALE', label: 'Male' }, { key: 'FEMALE', label: 'Female' }]} />
-            </Field>
-            <Field label="Language (leave empty for all languages)">
-              <TagSearch<LocaleItem>
-                type="adlocale"
-                placeholder="Search languages..."
-                selected={a.locales}
-                onAdd={(l) => up('adset', { locales: [...a.locales, l] })}
-                onRemove={(l) => up('adset', { locales: a.locales.filter((x) => x.key !== l.key) })}
-                getKey={(l) => String(l.key)}
-                getLabel={(l) => l.name}
-                toItem={(r) => ({ key: Number(r.key), name: r.name })}
-              />
-            </Field>
+            <Field label="Gender">{genderField}</Field>
+            <Field label="Detailed targeting">{interestField}</Field>
           </>
         ) : null}
 
-        <Field label="Placement strategy">
+        {retarget || a.audienceType === 'INTEREST' || a.audienceType === 'SOURCE' ? (
+          <>
+            <Field label="Locations">{locationField}</Field>
+            <div className="row field">
+              <Field label="Age">
+                <Select value={String(a.ageMin)} onChange={(v) => up('adset', { ageMin: Number(v) })} options={AGES.filter((n) => n < 65).map((n) => ({ key: String(n), label: String(n) }))} />
+              </Field>
+              <Field label="to">
+                <Select value={String(a.ageMax)} onChange={(v) => up('adset', { ageMax: Number(v) })} options={AGES.map((n) => ({ key: String(n), label: n === 65 ? '65+' : String(n) }))} />
+              </Field>
+            </div>
+            <Field label="Gender">{genderField}</Field>
+            {!retarget && a.audienceType === 'INTEREST' ? <Field label="Detailed targeting" hint="Include people who match any of these. Leave empty for broad.">{interestField}</Field> : null}
+            <Field label="Languages">{languageField}</Field>
+          </>
+        ) : null}
+
+        {/* Placements */}
+        <div className="subhead">Placements</div>
+        <Field>
           <Segmented
             value={a.placement}
             onChange={(v) => up('adset', { placement: v })}
             options={[
-              { key: 'ADVANTAGE', label: 'Advantage+ Placements' },
-              { key: 'MANUAL', label: 'Manual Placements', disabled: advantagePlus, title: advantagePlus ? 'Not available with Advantage+ Shopping' : undefined },
+              { key: 'ADVANTAGE', label: 'Advantage+ placements (recommended)' },
+              { key: 'MANUAL', label: 'Manual placements', disabled: advantagePlus, title: advantagePlus ? 'Not available with Advantage+ Shopping' : undefined },
             ]}
           />
         </Field>
@@ -373,12 +420,6 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
           <div className="field" style={{ marginTop: 10 }}>
             <CheckPills value={a.platforms} onChange={(v) => up('adset', { platforms: v })} options={PLATFORMS} />
           </div>
-        ) : null}
-
-        {goal.attribution ? (
-          <Field label="Attribution setting" hint="Some ad accounts lock this at the account level — if so, Facebook's own rejection message shows up at launch time.">
-            <Select value={a.attribution} onChange={(v) => up('adset', { attribution: v })} options={ATTRIBUTION} />
-          </Field>
         ) : null}
       </div>
 
