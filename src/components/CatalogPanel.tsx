@@ -1,0 +1,186 @@
+'use client';
+import { AlertTriangle, CheckCircle2, Info, RefreshCw, XCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { apiGet, apiPost, errorText } from '@/lib/client-api';
+import { useAsync } from '@/lib/hooks';
+import type { AdAccount } from '@/lib/types';
+import { Field, Loading, Select } from './ui';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+interface Catalog { id: string; name: string; product_count?: number; vertical?: string }
+type State = 'pass' | 'warn' | 'fail' | 'info';
+interface Row { state: State; title: string; detail?: string; action?: 'link' }
+
+const isUnavailable = (x: any): x is { unavailable: string } => x && typeof x === 'object' && 'unavailable' in x;
+
+/** Turn the raw health payload into readable checks. */
+export function readHealth(h: any, pixelId: string): { rows: Row[]; ready: boolean } {
+  const rows: Row[] = [];
+  let ready = true;
+
+  // Products
+  if (isUnavailable(h.info)) {
+    rows.push({ state: 'warn', title: "Couldn't read the product count", detail: h.info.unavailable });
+  } else {
+    const n = Number(h.info?.product_count || 0);
+    if (n > 0) rows.push({ state: 'pass', title: `${n.toLocaleString('en-IN')} products in the catalog` });
+    else { rows.push({ state: 'fail', title: 'The catalog has no products', detail: 'Sync your store to this catalog in Commerce Manager first.' }); ready = false; }
+  }
+
+  // Pixel link
+  if (!pixelId) {
+    rows.push({ state: 'fail', title: 'Pick the pixel that tracks your store', detail: 'Catalog ads use its ViewContent, AddToCart and Purchase events to choose products.' });
+    ready = false;
+  } else if (isUnavailable(h.sources)) {
+    rows.push({ state: 'warn', title: "Couldn't confirm the pixel is linked to this catalog", detail: h.sources.unavailable });
+  } else if (Array.isArray(h.sources) && h.sources.some((s: any) => s.id === pixelId)) {
+    rows.push({ state: 'pass', title: 'Pixel is linked to this catalog' });
+  } else {
+    rows.push({ state: 'fail', title: "Pixel isn't linked to this catalog", detail: "Without the link, Meta can't match shopper events to products.", action: 'link' });
+    ready = false;
+  }
+
+  // Match rate (event_stats)
+  const stats = !isUnavailable(h.stats) ? (h.stats?.data || []) : [];
+  const byEvent = new Map<string, { m: number; u: number }>();
+  for (const r of stats) {
+    const ev = r.event || r.event_name;
+    if (!ev) continue;
+    const m = Number(r.total_matched_content_ids ?? r.matched ?? 0);
+    const u = Number(r.total_unmatched_content_ids ?? r.unmatched ?? 0) + Number(r.total_content_ids_matched_other_catalogs ?? 0);
+    const cur = byEvent.get(ev) || { m: 0, u: 0 };
+    byEvent.set(ev, { m: cur.m + m, u: cur.u + u });
+  }
+  const parts: string[] = [];
+  let worst = 101;
+  byEvent.forEach((v, k) => {
+    const total = v.m + v.u;
+    if (!total) return;
+    const pct = Math.round((v.m / total) * 100);
+    worst = Math.min(worst, pct);
+    parts.push(`${k} ${pct}%`);
+  });
+  if (parts.length) {
+    rows.push({
+      state: worst >= 75 ? 'pass' : worst >= 50 ? 'warn' : 'fail',
+      title: `Event match rate: ${parts.join(', ')}`,
+      detail: worst >= 75 ? undefined : 'Product IDs in pixel events should equal catalog IDs (on Shopify: variant IDs). Low matches mean ads show the wrong products.',
+    });
+  } else {
+    rows.push({ state: 'info', title: 'Match rate not available yet', detail: 'Meta shows it once the pixel has sent product events for this catalog.' });
+  }
+
+  // Pixel checks for catalog ads
+  if (h.checks && !isUnavailable(h.checks)) {
+    const failed = (h.checks.data || []).filter((c: any) => c.result && c.result !== 'passed');
+    if (failed.length) failed.slice(0, 3).forEach((c: any) => rows.push({ state: 'warn', title: c.title || c.key, detail: c.description }));
+    else if ((h.checks.data || []).length) rows.push({ state: 'pass', title: 'Pixel sends the events catalog ads need' });
+  }
+
+  // Catalog diagnostics
+  if (h.diagnostics && !isUnavailable(h.diagnostics)) {
+    const issues: string[] = [];
+    const walk = (x: any) => {
+      if (!x || typeof x !== 'object') return;
+      if (Array.isArray(x)) { x.forEach(walk); return; }
+      if (x.title && (x.num_items || x.severity)) issues.push(`${x.title}${x.num_items ? ` (${x.num_items})` : ''}`);
+      Object.values(x).forEach((v) => { if (typeof v === 'object') walk(v); });
+    };
+    walk(h.diagnostics.data);
+    if (issues.length) rows.push({ state: 'warn', title: `${issues.length} catalog ${issues.length === 1 ? 'issue' : 'issues'} in Commerce Manager`, detail: issues.slice(0, 3).join('; ') });
+  }
+
+  return { rows, ready };
+}
+
+const ICON: Record<State, JSX.Element> = {
+  pass: <CheckCircle2 size={16} />,
+  warn: <AlertTriangle size={16} />,
+  fail: <XCircle size={16} />,
+  info: <Info size={16} />,
+};
+
+export default function CatalogPanel({ account, catalogId, locked, onCatalog, pixels, pixelsLoading, pixelId, onPixel, onReady }: {
+  account: AdAccount;
+  catalogId: string;
+  locked: boolean;
+  onCatalog: (id: string) => void;
+  pixels: { id: string; name: string }[];
+  pixelsLoading: boolean;
+  pixelId: string;
+  onPixel: (id: string) => void;
+  onReady: (ready: boolean) => void;
+}) {
+  const catalogs = useAsync<Catalog[]>(`catalogs-${account.id}`, () => apiGet('catalogs', { account: account.id }));
+  const health = useAsync<any>(catalogId ? `health-${catalogId}-${pixelId}` : null, () => apiGet('health', { catalog: catalogId, pixel: pixelId }));
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState('');
+
+  const result = useMemo(() => (health.data ? readHealth(health.data, pixelId) : null), [health.data, pixelId]);
+  useEffect(() => { onReady(!!result?.ready); }, [result, onReady]);
+
+  // Auto-pick when there's exactly one catalog.
+  useEffect(() => {
+    if (!locked && !catalogId && catalogs.data?.length === 1) onCatalog(catalogs.data[0].id);
+  }, [catalogs.data, catalogId, locked, onCatalog]);
+
+  const link = async () => {
+    setLinking(true);
+    setLinkError('');
+    try { await apiPost('link-pixel', { catalog: catalogId, pixel: pixelId }); health.reload(); }
+    catch (e) { setLinkError(errorText(e)); }
+    finally { setLinking(false); }
+  };
+
+  const current = catalogs.data?.find((c) => c.id === catalogId);
+
+  return (
+    <div className="card">
+      <Field label="Catalog" hint={locked ? 'Set by the campaign.' : undefined}>
+        {catalogs.loading ? <Loading text="Loading catalogs…" /> : catalogs.error && !locked ? <div className="notice bad">{catalogs.error}</div> : locked ? (
+          <input className="input" disabled value={current ? current.name : catalogId} />
+        ) : catalogs.data && !catalogs.data.length ? (
+          <div className="notice warn">No catalogs found for this ad account&apos;s business. Create one in Commerce Manager, or connect your store through the Facebook &amp; Instagram app.</div>
+        ) : (
+          <Select
+            value={catalogId}
+            onChange={onCatalog}
+            placeholder="Select a catalog..."
+            options={(catalogs.data || []).map((c) => ({ key: c.id, label: `${c.name}${c.product_count != null ? ` (${c.product_count.toLocaleString('en-IN')} products)` : ''}` }))}
+          />
+        )}
+      </Field>
+      <Field label="Pixel / dataset" hint="The pixel that sends ViewContent, AddToCart and Purchase from your store.">
+        {pixelsLoading ? <Loading text="Loading pixels…" /> : (
+          <Select value={pixelId} onChange={onPixel} placeholder="Select a pixel..." options={pixels.map((p) => ({ key: p.id, label: p.name }))} />
+        )}
+      </Field>
+
+      {catalogId ? (
+        <div className="health" aria-live="polite">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="label" style={{ margin: 0 }}>Catalog readiness</span>
+            <button type="button" className="btn-link" onClick={health.reload} disabled={health.loading}><RefreshCw size={12} style={{ verticalAlign: -1 }} /> Check again</button>
+          </div>
+          {health.loading ? <Loading text="Checking catalog…" /> : health.error ? <div className="notice bad">{health.error}</div> : result?.rows.map((r, i) => (
+            <div key={i} className={`health-row ${r.state}`}>
+              <span className="icon">{ICON[r.state]}</span>
+              <div>
+                <div className="t">{r.title}</div>
+                {r.detail ? <div className="d">{r.detail}</div> : null}
+                {r.action === 'link' ? (
+                  <div style={{ marginTop: 6 }}>
+                    <button type="button" className="btn-ghost" onClick={link} disabled={linking}>{linking ? <span className="spinner" /> : null} Link pixel to catalog</button>
+                    {linkError ? <div className="d" style={{ color: 'var(--bad)' }}>{linkError}</div> : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))}
+          {result && !result.ready ? <div className="hint">Fix the red items to launch.</div> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
