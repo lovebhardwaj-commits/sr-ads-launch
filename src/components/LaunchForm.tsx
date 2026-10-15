@@ -10,6 +10,7 @@ import { buildContext, validate } from '@/lib/form';
 import { useAsync } from '@/lib/hooks';
 import type { AdAccount, AdsetLite, CampaignLite, FormState, GeoItem, InterestItem, LaunchResult, LocaleItem, Mode } from '@/lib/types';
 import AdSection from './AdSection';
+import BudgetField from './BudgetField';
 import CatalogPanel from './CatalogPanel';
 import ReviewModal from './ReviewModal';
 import { CheckPills, Field, Loading, Segmented, Select, TagSearch, TextInput, Toggle } from './ui';
@@ -31,6 +32,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
   const ctx = buildContext(mode, form, campaign, source);
   const c = form.campaign;
   const a = form.adset;
+  const b = form.budget;
   const sym = currencySymbol(account.currency);
   const [catalogReady, setCatalogReady] = useState(false);
   const [reviewing, setReviewing] = useState(false);
@@ -40,9 +42,9 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
 
   // Account-level lists
   const pixels = useAsync<{ id: string; name: string }[]>(`pixels-${account.id}`, () => apiGet('pixels', { account: account.id }));
-  const usesAudience = !ctx.isCatalog || a.catalogAudience === 'BROAD';
+  const retarget = ctx.isCatalog && a.catalogAudience !== 'BROAD';
   const saved = useAsync<{ id: string; name: string }[]>(
-    usesAudience && a.audienceType === 'SAVED' ? `saved-${account.id}` : null,
+    !retarget && a.audienceType === 'SAVED' ? `saved-${account.id}` : null,
     () => apiGet('saved-audiences', { account: account.id }),
   );
   const productSets = useAsync<ProductSet[]>(ctx.isCatalog && ctx.catalogId ? `sets-${ctx.catalogId}` : null, () => apiGet('product-sets', { catalog: ctx.catalogId }));
@@ -55,10 +57,10 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx.objective, ctx.isCatalog]);
 
-  const bids = BID_STRATEGIES.filter((b) => !b.valueOnly || goal.key === 'VALUE');
-  const bid = bids.find((b) => b.key === c.bidStrategy) || bids[0];
+  const bids = BID_STRATEGIES.filter((x) => !x.valueOnly || goal.key === 'VALUE');
+  const bid = bids.find((x) => x.key === c.bidStrategy) || bids[0];
   useEffect(() => {
-    if (!bids.some((b) => b.key === c.bidStrategy)) up('campaign', { bidStrategy: bids[0].key });
+    if (!bids.some((x) => x.key === c.bidStrategy)) up('campaign', { bidStrategy: bids[0].key });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goal.key]);
 
@@ -82,7 +84,15 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
     [form, ctx, goal.pixel, bid.needs, catalogReady],
   );
 
-  const retarget = ctx.isCatalog && a.catalogAudience !== 'BROAD';
+  // Budget can live at either level; an amount at one level disables the other.
+  const campaignBudgetReason = b.level === 'ADSET' && b.amount ? 'Using an ad set budget. Clear it to use a campaign budget instead.' : undefined;
+  const adsetBudgetReason = !ctx.needsCampaign
+    ? (ctx.campaignHasBudget ? 'This campaign has a campaign budget (Advantage+ campaign budget), so its ad sets share it.' : undefined)
+    : advantagePlus
+      ? 'Advantage+ Shopping uses the campaign budget.'
+      : b.level === 'CAMPAIGN' && b.amount ? 'Using a campaign budget. Clear it to set an ad set budget instead.' : undefined;
+  const setBudget = (patch: Partial<FormState['budget']>) => up('budget', patch);
+
   const upsellOrCross = retarget && (a.retargetPreset === 'UPSELL' || a.retargetPreset === 'CROSS_SELL');
   const setOptions = (productSets.data || []).map((s) => ({ key: s.id, label: `${s.name}${s.product_count != null ? ` (${s.product_count.toLocaleString('en-IN')} products)` : ''}` }));
 
@@ -115,8 +125,8 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
                 options={OBJECTIVES}
               />
             </Field>
-            {c.objective === 'OUTCOME_SALES' && (mode === 'NEW' || c.catalogEnabled) ? (
-              <Field hint={c.catalogEnabled ? 'Ads pick products from your catalog for each shopper.' : 'Turn on to show products from your catalog instead of uploaded creatives.'}>
+            {c.objective === 'OUTCOME_SALES' ? (
+              <Field hint={mode !== 'NEW' ? 'Set by the ad set being duplicated.' : c.catalogEnabled ? 'Ads pick products from your catalog for each shopper.' : 'Turn on to show products from your catalog instead of uploaded creatives.'}>
                 <Toggle
                   checked={c.catalogEnabled}
                   onChange={(v) => { if (mode === 'NEW') up('campaign', { catalogEnabled: v }); }}
@@ -124,10 +134,10 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
                 />
               </Field>
             ) : null}
-            <Field label="Campaign setup" hint={advantagePlus ? 'Advantage+ uses Advantage+ Audience and Advantage+ Placements; those choices are locked below.' : undefined}>
+            <Field label="Campaign setup" hint={advantagePlus ? 'Advantage+ uses a campaign budget, Advantage+ Audience and Advantage+ Placements; those choices are locked below.' : undefined}>
               <Segmented value={c.setup} onChange={(v) => up('campaign', { setup: v })} options={[{ key: 'MANUAL', label: 'Manual' }, { key: 'ADVANTAGE_PLUS', label: 'Advantage+ Shopping' }]} />
             </Field>
-            <Field label="Bid strategy">
+            <Field label="Bid strategy" hint={b.level === 'ADSET' && b.amount ? 'Applied to the ad set, since the budget is at ad set level.' : undefined}>
               <Select value={bid.key} onChange={(v) => up('campaign', { bidStrategy: v })} options={bids} />
             </Field>
             {bid.needs === 'bid' ? (
@@ -142,6 +152,15 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
                 <TextInput inputMode="decimal" value={c.roasFloor} onChange={(e) => up('campaign', { roasFloor: e.target.value.replace(/[^\d.]/g, '') })} placeholder="e.g. 2.5" />
               </Field>
             ) : null}
+            <BudgetField
+              level="CAMPAIGN"
+              label="Campaign budget (Advantage+ campaign budget)"
+              hint="Meta spreads one budget across the ad sets. Leave empty to set the budget on the ad set instead."
+              budget={b}
+              onChange={setBudget}
+              symbol={sym}
+              disabledReason={campaignBudgetReason}
+            />
           </div>
         </>
       ) : null}
@@ -155,31 +174,14 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             catalogId={ctx.catalogId}
             locked={ctx.catalogLocked}
             onCatalog={(id) => { up('campaign', { catalogId: id }); up('adset', { productSetId: '', crossSellSourceSetId: '' }); }}
-            pixels={pixels.data || []}
-            pixelsLoading={pixels.loading}
+            productSets={productSets.data || []}
+            productSetsLoading={productSets.loading}
+            productSetsError={productSets.error}
+            productSetId={a.productSetId}
+            onProductSet={(id) => up('adset', { productSetId: id })}
             pixelId={a.pixelId}
-            onPixel={(id) => up('adset', { pixelId: id })}
             onReady={setCatalogReady}
           />
-        </>
-      ) : null}
-
-      {/* ── Budget ── */}
-      {ctx.showBudget ? (
-        <>
-          <h2 className="section-title">Budget</h2>
-          <div className="card">
-            {ctx.adsetBudget ? <p className="note">This campaign has no campaign-level budget, so the ad set needs its own.</p> : null}
-            <Segmented value={form.budget.type} onChange={(v) => up('budget', { type: v })} options={[{ key: 'DAILY', label: 'Daily budget' }, { key: 'LIFETIME', label: 'Lifetime budget' }]} />
-            <div className="field" style={{ marginTop: 12 }}>
-              <TextInput inputMode="decimal" value={form.budget.amount} onChange={(e) => up('budget', { amount: e.target.value.replace(/[^\d.]/g, '') })} placeholder={`Enter an amount (${sym.trim()})`} aria-label="Budget amount" />
-            </div>
-            {form.budget.type === 'LIFETIME' ? (
-              <Field label="End date">
-                <TextInput type="datetime-local" value={form.budget.endDate} onChange={(e) => up('budget', { endDate: e.target.value })} />
-              </Field>
-            ) : null}
-          </div>
         </>
       ) : null}
 
@@ -190,13 +192,19 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
           <TextInput value={a.name} onChange={(e) => up('adset', { name: e.target.value })} placeholder={ctx.isCatalog ? 'e.g. Catalog - Viewed or added to cart 14d' : 'e.g. Advantage+ Audience - Broad'} />
         </Field>
 
+        <BudgetField
+          level="ADSET"
+          label="Ad set budget"
+          hint={ctx.needsCampaign ? 'Leave empty to use a campaign budget instead.' : undefined}
+          budget={b}
+          onChange={setBudget}
+          symbol={sym}
+          disabledReason={adsetBudgetReason}
+        />
+
         {ctx.isCatalog ? (
-          <>
-            <Field label="Product set" hint="The products these ads can show.">
-              {productSets.loading ? <Loading text="Loading product sets…" /> : productSets.error ? <div className="notice bad">{productSets.error}</div> : (
-                <Select value={a.productSetId} onChange={(v) => up('adset', { productSetId: v })} options={setOptions} placeholder={ctx.catalogId ? 'Select a product set…' : 'Pick a catalog first'} disabled={!ctx.catalogId} />
-              )}
-            </Field>
+          <div className="subcard">
+            <div className="label strong" style={{ marginBottom: 10 }}>Catalog audience · {setOptions.find((s) => s.key === a.productSetId)?.label || 'pick a product set in the Catalog card'}</div>
             <Field label="Audience">
               <Segmented
                 value={a.catalogAudience}
@@ -216,8 +224,8 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
                   <Field
                     label="Product set people interacted with"
                     hint={a.retargetPreset === 'UPSELL'
-                      ? 'People who viewed or added these products to cart are shown products from the product set above.'
-                      : 'People who purchased these products are shown products from the product set above.'}
+                      ? 'People who viewed or added these products to cart are shown products from the chosen product set.'
+                      : 'People who purchased these products are shown products from the chosen product set.'}
                   >
                     <Select value={a.crossSellSourceSetId} onChange={(v) => up('adset', { crossSellSourceSetId: v })} options={setOptions} placeholder="Select a product set…" />
                   </Field>
@@ -244,24 +252,24 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
                 </div>
               </>
             ) : null}
-          </>
+          </div>
         ) : null}
 
         <Field label="Performance goal">
           <Select value={goal.key} onChange={(v) => up('adset', { goal: v })} options={goals} />
         </Field>
 
-        {!ctx.isCatalog && goal.pixel ? (
-          <>
-            <Field label="Conversion event">
-              <Select value={goal.fixedEvent || a.event} disabled={!!goal.fixedEvent} onChange={(v) => up('adset', { event: v })} options={CONVERSION_EVENTS} />
-            </Field>
-            <Field label="Pixel / dataset">
-              {pixels.loading ? <Loading text="Loading pixels…" /> : pixels.error ? <div className="notice bad">{pixels.error}</div> : (
-                <Select value={a.pixelId} onChange={(v) => up('adset', { pixelId: v })} placeholder="Select a pixel..." options={(pixels.data || []).map((p) => ({ key: p.id, label: p.name }))} />
-              )}
-            </Field>
-          </>
+        {goal.pixel ? (
+          <Field label="Conversion event">
+            <Select value={goal.fixedEvent || a.event} disabled={!!goal.fixedEvent} onChange={(v) => up('adset', { event: v })} options={CONVERSION_EVENTS} />
+          </Field>
+        ) : null}
+        {goal.pixel || ctx.isCatalog ? (
+          <Field label="Pixel / dataset" hint={ctx.isCatalog ? 'Must be linked to the catalog; the Catalog card checks this.' : undefined}>
+            {pixels.loading ? <Loading text="Loading pixels…" /> : pixels.error ? <div className="notice bad">{pixels.error}</div> : (
+              <Select value={a.pixelId} onChange={(v) => up('adset', { pixelId: v })} placeholder="Select a pixel..." options={(pixels.data || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
+            )}
+          </Field>
         ) : null}
 
         {!retarget ? (
@@ -322,26 +330,20 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
                 describe={(r) => [r.type === 'region' ? 'State' : r.type === 'city' ? 'City' : 'Country', r.country_name].filter(Boolean).join(' · ')}
               />
             </Field>
-
-            {!retarget ? (
-              <>
-                <div className="row field">
-                  <Field label="Min age">
-                    <Select value={String(a.ageMin)} onChange={(v) => up('adset', { ageMin: Number(v) })} options={AGES.filter((n) => n < 65).map((n) => ({ key: String(n), label: String(n) }))} />
-                  </Field>
-                  <Field label="Max age">
-                    <Select value={String(a.ageMax)} onChange={(v) => up('adset', { ageMax: Number(v) })} options={AGES.map((n) => ({ key: String(n), label: n === 65 ? '65+' : String(n) }))} />
-                  </Field>
-                </div>
-                {a.audienceType === 'ADVANTAGE' && (a.ageMax < 65 || a.gender !== 'ALL' || a.ageMin > 25) ? (
-                  <p className="hint">With Advantage+ Audience, max age and gender are suggestions, not limits, and min age can be at most 25.</p>
-                ) : null}
-                <Field label="Gender">
-                  <Segmented value={a.gender} onChange={(v) => up('adset', { gender: v })} options={[{ key: 'ALL', label: 'All' }, { key: 'MALE', label: 'Male' }, { key: 'FEMALE', label: 'Female' }]} />
-                </Field>
-              </>
+            <div className="row field">
+              <Field label="Min age">
+                <Select value={String(a.ageMin)} onChange={(v) => up('adset', { ageMin: Number(v) })} options={AGES.filter((n) => n < 65).map((n) => ({ key: String(n), label: String(n) }))} />
+              </Field>
+              <Field label="Max age">
+                <Select value={String(a.ageMax)} onChange={(v) => up('adset', { ageMax: Number(v) })} options={AGES.map((n) => ({ key: String(n), label: n === 65 ? '65+' : String(n) }))} />
+              </Field>
+            </div>
+            {!retarget && a.audienceType === 'ADVANTAGE' && (a.ageMax < 65 || a.gender !== 'ALL' || a.ageMin > 25) ? (
+              <p className="hint">With Advantage+ Audience, max age and gender are suggestions, not limits, and min age can be at most 25.</p>
             ) : null}
-
+            <Field label="Gender">
+              <Segmented value={a.gender} onChange={(v) => up('adset', { gender: v })} options={[{ key: 'ALL', label: 'All' }, { key: 'MALE', label: 'Male' }, { key: 'FEMALE', label: 'Female' }]} />
+            </Field>
             <Field label="Language (leave empty for all languages)">
               <TagSearch<LocaleItem>
                 type="adlocale"

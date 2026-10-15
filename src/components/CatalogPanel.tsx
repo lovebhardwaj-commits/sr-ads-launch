@@ -30,7 +30,7 @@ export function readHealth(h: any, pixelId: string): { rows: Row[]; ready: boole
 
   // Pixel link
   if (!pixelId) {
-    rows.push({ state: 'fail', title: 'Pick the pixel that tracks your store', detail: 'Catalog ads use its ViewContent, AddToCart and Purchase events to choose products.' });
+    rows.push({ state: 'fail', title: 'Pick the pixel in the Ad Set card', detail: 'Catalog ads use its ViewContent, AddToCart and Purchase events to choose products.' });
     ready = false;
   } else if (isUnavailable(h.sources)) {
     rows.push({ state: 'warn', title: "Couldn't confirm the pixel is linked to this catalog", detail: h.sources.unavailable });
@@ -101,21 +101,25 @@ const ICON: Record<State, JSX.Element> = {
   info: <Info size={16} />,
 };
 
-export default function CatalogPanel({ account, catalogId, locked, onCatalog, pixels, pixelsLoading, pixelId, onPixel, onReady }: {
+export default function CatalogPanel({ account, catalogId, locked, onCatalog, productSets, productSetsLoading, productSetsError, productSetId, onProductSet, pixelId, onReady }: {
   account: AdAccount;
   catalogId: string;
   locked: boolean;
   onCatalog: (id: string) => void;
-  pixels: { id: string; name: string }[];
-  pixelsLoading: boolean;
+  productSets: { id: string; name: string; product_count?: number }[];
+  productSetsLoading: boolean;
+  productSetsError: string;
+  productSetId: string;
+  onProductSet: (id: string) => void;
+  /** Chosen in the Ad Set card; used for the pixel checks here. */
   pixelId: string;
-  onPixel: (id: string) => void;
   onReady: (ready: boolean) => void;
 }) {
   const catalogs = useAsync<Catalog[]>(`catalogs-${account.id}`, () => apiGet('catalogs', { account: account.id }));
   const health = useAsync<any>(catalogId ? `health-${catalogId}-${pixelId}` : null, () => apiGet('health', { catalog: catalogId, pixel: pixelId }));
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState('');
+  const [q, setQ] = useState('');
 
   const result = useMemo(() => (health.data ? readHealth(health.data, pixelId) : null), [health.data, pixelId]);
   useEffect(() => { onReady(!!result?.ready); }, [result, onReady]);
@@ -134,12 +138,13 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pi
   };
 
   const current = catalogs.data?.find((c) => c.id === catalogId);
+  const sets = productSets.filter((s) => !q || s.name.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div className="card">
       <Field label="Catalog" hint={locked ? 'Set by the campaign.' : undefined}>
         {catalogs.loading ? <Loading text="Loading catalogs…" /> : catalogs.error && !locked ? <div className="notice bad">{catalogs.error}</div> : locked ? (
-          <input className="input" disabled value={current ? current.name : catalogId} />
+          <input className="input" disabled value={current ? `${current.name} (${current.id})` : catalogId} />
         ) : catalogs.data && !catalogs.data.length ? (
           <div className="notice warn">No catalogs found for this ad account&apos;s business. Create one in Commerce Manager, or connect your store through the Facebook &amp; Instagram app.</div>
         ) : (
@@ -151,11 +156,30 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pi
           />
         )}
       </Field>
-      <Field label="Pixel / dataset" hint="The pixel that sends ViewContent, AddToCart and Purchase from your store.">
-        {pixelsLoading ? <Loading text="Loading pixels…" /> : (
-          <Select value={pixelId} onChange={onPixel} placeholder="Select a pixel..." options={pixels.map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
-        )}
-      </Field>
+
+      {catalogId ? (
+        <Field label={`Product sets${productSets.length ? ` (${productSets.length})` : ''}`} hint="The products this ad set can show. Create or edit sets in Commerce Manager.">
+          {productSetsLoading ? <Loading text="Loading product sets…" /> : productSetsError ? <div className="notice bad">{productSetsError}</div> : !productSets.length ? (
+            <div className="notice warn">This catalog has no product sets yet.</div>
+          ) : (
+            <>
+              {productSets.length > 6 ? (
+                <input className="input" style={{ marginBottom: 8 }} placeholder="Search product sets…" value={q} onChange={(e) => setQ(e.target.value)} />
+              ) : null}
+              <div className="set-list" role="radiogroup" aria-label="Product sets">
+                {sets.map((s) => (
+                  <label key={s.id} className={`set-row ${s.id === productSetId ? 'on' : ''}`}>
+                    <input type="radio" name="product-set" checked={s.id === productSetId} onChange={() => onProductSet(s.id)} />
+                    <span className="set-name">{s.name}</span>
+                    <span className="set-meta">{s.product_count != null ? `${s.product_count.toLocaleString('en-IN')} products · ` : ''}{s.id}</span>
+                  </label>
+                ))}
+                {!sets.length ? <div className="hint" style={{ padding: 8 }}>No product sets match “{q}”.</div> : null}
+              </div>
+            </>
+          )}
+        </Field>
+      ) : null}
 
       {catalogId ? (
         <div className="health" aria-live="polite">
