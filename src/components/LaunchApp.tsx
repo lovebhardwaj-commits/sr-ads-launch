@@ -1,0 +1,192 @@
+'use client';
+import { ChevronLeft, List, Rocket } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { apiGet } from '@/lib/client-api';
+import { goalsFor } from '@/lib/constants';
+import { defaultForm, formFromAdset } from '@/lib/form';
+import { useAsync } from '@/lib/hooks';
+import type { AdAccount, AdsetLite, CampaignLite, FormState, LaunchResult, Mode } from '@/lib/types';
+import LaunchForm from './LaunchForm';
+import { AdsetPicker, CampaignPicker } from './Pickers';
+import ResultView from './ResultView';
+import { Loading, Select } from './ui';
+
+type View =
+  | { kind: 'home' }
+  | { kind: 'pick-campaign'; next: 'EXISTING' | 'DUP_EXISTING' }
+  | { kind: 'pick-adset' }
+  | { kind: 'dup-dest' }
+  | { kind: 'form'; mode: Mode }
+  | { kind: 'done'; result: LaunchResult; mode: Mode };
+
+const CHOICES = [
+  { key: 'new', title: 'New Campaign + Ad Set', text: 'Create a brand-new campaign and its first ad set together.' },
+  { key: 'existing', title: 'New Ad Set → Existing Campaign', text: 'Add a new ad set to a campaign you already have.' },
+  { key: 'duplicate', title: 'Duplicate an Ad Set', text: "Copy an existing ad set's settings into a new or existing campaign." },
+  { key: 'catalog', title: 'New Catalog Campaign', text: "Show each shopper the products they're most likely to buy, straight from your catalog.", tag: 'New' },
+] as const;
+
+export default function LaunchApp({ declined }: { declined: string[] }) {
+  const accounts = useAsync<AdAccount[]>('accounts', () => apiGet('adaccounts'));
+  const [accountId, setAccountId] = useState('');
+  const [view, setView] = useState<View>({ kind: 'home' });
+  const [form, setForm] = useState<FormState>(defaultForm());
+  const [campaign, setCampaign] = useState<CampaignLite | undefined>();
+  const [source, setSource] = useState<AdsetLite | undefined>();
+  const [fabOpen, setFabOpen] = useState(false);
+
+  // Restore the last ad account, else take the first.
+  useEffect(() => {
+    if (!accounts.data?.length || accountId) return;
+    let saved = '';
+    try { saved = localStorage.getItem('sr-ad-account') || ''; } catch { /* ignore */ }
+    const pick = accounts.data.find((a) => a.id === saved) || accounts.data[0];
+    setAccountId(pick.id);
+  }, [accounts.data, accountId]);
+
+  const account = useMemo(() => accounts.data?.find((a) => a.id === accountId), [accounts.data, accountId]);
+
+  const changeAccount = (id: string) => {
+    setAccountId(id);
+    try { localStorage.setItem('sr-ad-account', id); } catch { /* ignore */ }
+    startOver();
+  };
+
+  const startOver = () => {
+    setView({ kind: 'home' });
+    setForm(defaultForm());
+    setCampaign(undefined);
+    setSource(undefined);
+    window.scrollTo({ top: 0 });
+  };
+
+  const choose = (key: string) => {
+    setFabOpen(false);
+    setCampaign(undefined);
+    setSource(undefined);
+    if (key === 'new') { setForm(defaultForm()); setView({ kind: 'form', mode: 'NEW' }); }
+    if (key === 'catalog') { setForm(defaultForm(true)); setView({ kind: 'form', mode: 'NEW' }); }
+    if (key === 'existing') { setForm(defaultForm()); setView({ kind: 'pick-campaign', next: 'EXISTING' }); }
+    if (key === 'duplicate') { setView({ kind: 'pick-adset' }); }
+    window.scrollTo({ top: 0 });
+  };
+
+  const adsCount = source?.ads?.summary?.total_count ?? 0;
+
+  return (
+    <div className="content">
+      <h1 className="page-title">Launch</h1>
+      <p className="page-sub">Launch a campaign and ad set straight to Facebook — pre-filled for Indian D2C, every field editable.</p>
+
+      {declined.length ? (
+        <div className="notice warn" style={{ marginBottom: 16 }}>
+          You didn&apos;t allow <b>{declined.join(', ')}</b>. Some options won&apos;t load. <a href="/api/auth/login">Log in again</a> to grant them.
+        </div>
+      ) : null}
+
+      <div className="card">
+        <span className="label">Ad account</span>
+        {accounts.loading ? <Loading text="Loading ad accounts…" /> : accounts.error ? (
+          <div className="notice bad">{accounts.error}</div>
+        ) : accounts.data && !accounts.data.length ? (
+          <div className="notice warn">No ad accounts found for this Facebook login. Ask a business admin to give you access to an ad account.</div>
+        ) : (
+          <Select
+            value={accountId}
+            onChange={changeAccount}
+            ariaLabel="Ad account"
+            options={(accounts.data || []).map((a) => ({ key: a.id, label: a.name || a.account_id }))}
+          />
+        )}
+      </div>
+
+      {!account ? null : view.kind === 'home' ? (
+        <div className="choices">
+          {CHOICES.map((c) => (
+            <button key={c.key} type="button" className="choice" onClick={() => choose(c.key)}>
+              <Rocket size={22} strokeWidth={1.8} />
+              <h3>{c.title}{'tag' in c ? <span className="tag">{c.tag}</span> : null}</h3>
+              <p>{c.text}</p>
+            </button>
+          ))}
+        </div>
+      ) : view.kind === 'pick-campaign' ? (
+        <>
+          <button type="button" className="back" onClick={startOver}><ChevronLeft size={13} /> Start over</button>
+          <CampaignPicker
+            account={account}
+            title={view.next === 'EXISTING' ? 'Pick a campaign for the new ad set' : 'Pick the campaign the duplicate goes into'}
+            source={view.next === 'DUP_EXISTING' ? source : undefined}
+            onPick={(c) => {
+              setCampaign(c);
+              if (view.next === 'EXISTING') {
+                // Start on the first goal that fits this campaign's objective.
+                const goal = goalsFor(c.objective, !!c.promoted_object?.product_catalog_id)[0].key;
+                setForm((f) => ({ ...f, adset: { ...f.adset, goal } }));
+              }
+              setView({ kind: 'form', mode: view.next });
+              window.scrollTo({ top: 0 });
+            }}
+          />
+        </>
+      ) : view.kind === 'pick-adset' ? (
+        <>
+          <button type="button" className="back" onClick={startOver}><ChevronLeft size={13} /> Start over</button>
+          <AdsetPicker
+            account={account}
+            onPick={(a) => {
+              setSource(a);
+              setForm(formFromAdset(a, account.currency));
+              setView({ kind: 'dup-dest' });
+            }}
+          />
+        </>
+      ) : view.kind === 'dup-dest' && source ? (
+        <>
+          <button type="button" className="back" onClick={startOver}><ChevronLeft size={13} /> Start over</button>
+          <h2 className="section-title" style={{ marginTop: 0 }}>Where should the duplicate go?</h2>
+          <p className="note">
+            Duplicating “{source.name}” (currently in <span className="strong">{source.campaign?.name}</span>) — its settings are pre-filled below, still fully editable.
+            {' '}{adsCount === 1 ? 'Its 1 ad' : `Its ${adsCount} ads`} will be duplicated into the new ad set too, using the same creative.
+          </p>
+          <div className="choices" style={{ marginTop: 14 }}>
+            <button type="button" className="choice" onClick={() => setView({ kind: 'form', mode: 'DUP_NEW' })}>
+              <Rocket size={22} strokeWidth={1.8} />
+              <h3>New Campaign</h3>
+              <p>Create a new campaign for this ad set.</p>
+            </button>
+            <button type="button" className="choice" onClick={() => setView({ kind: 'pick-campaign', next: 'DUP_EXISTING' })}>
+              <Rocket size={22} strokeWidth={1.8} />
+              <h3>Existing Campaign</h3>
+              <p>Attach it to a campaign you already have.</p>
+            </button>
+          </div>
+        </>
+      ) : view.kind === 'form' ? (
+        <LaunchForm
+          key={`${view.mode}-${campaign?.id || ''}-${source?.id || ''}`}
+          mode={view.mode}
+          account={account}
+          form={form}
+          setForm={setForm}
+          campaign={campaign}
+          source={source}
+          onStartOver={startOver}
+          onDone={(result) => { setView({ kind: 'done', result, mode: view.mode }); window.scrollTo({ top: 0 }); }}
+        />
+      ) : view.kind === 'done' ? (
+        <ResultView result={view.result} account={account} onAgain={startOver} />
+      ) : null}
+
+      <button type="button" className="fab" aria-label="Launch options" onClick={() => setFabOpen(!fabOpen)}>
+        <List size={20} strokeWidth={1.8} />
+      </button>
+      {fabOpen ? (
+        <div className="fab-menu" role="menu">
+          {CHOICES.map((c) => <button key={c.key} type="button" role="menuitem" onClick={() => choose(c.key)}>{c.title}</button>)}
+          <button type="button" role="menuitem" onClick={() => { setFabOpen(false); startOver(); }}>Back to start</button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
