@@ -174,6 +174,88 @@ export function TagSearch<T>({ type, placeholder, selected, onAdd, onRemove, get
   );
 }
 
+/** Dropdown with a search box: type to filter by label, extra text (e.g. an ID) or key. */
+export function SearchSelect({ value, onChange, options, placeholder, searchPlaceholder, ariaLabel, noun = 'options' }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { key: string; label: string; meta?: string }[];
+  placeholder?: string;
+  searchPlaceholder?: string;
+  ariaLabel?: string;
+  noun?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [active, setActive] = useState(0);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const id = useId();
+  const LIMIT = 100;
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (boxRef.current && !boxRef.current.contains(e.target as Node)) { setOpen(false); setQ(''); } };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  const selected = options.find((o) => o.key === value);
+  const s = q.trim().toLowerCase();
+  const matches = s ? options.filter((o) => `${o.label} ${o.meta || ''} ${o.key}`.toLowerCase().includes(s)) : options;
+  const shown = matches.slice(0, LIMIT);
+
+  const pick = (key: string) => {
+    onChange(key);
+    setOpen(false);
+    setQ('');
+    inputRef.current?.blur();
+  };
+
+  return (
+    <div className="tag-search select-wrap" ref={boxRef}>
+      <input
+        ref={inputRef}
+        className="input"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={id}
+        aria-label={ariaLabel}
+        value={open ? q : selected ? `${selected.label}${selected.meta ? ` · ${selected.meta}` : ''}` : ''}
+        placeholder={open ? (searchPlaceholder || 'Search…') : placeholder}
+        onFocus={() => { setOpen(true); setQ(''); setActive(0); }}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); setActive(0); }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, shown.length - 1)); }
+          if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
+          if (e.key === 'Enter' && open && shown[active]) { e.preventDefault(); pick(shown[active].key); }
+          if (e.key === 'Escape') { setOpen(false); setQ(''); inputRef.current?.blur(); }
+        }}
+      />
+      <ChevronDown className="chev" size={22} strokeWidth={2.2} />
+      {open ? (
+        <div className="dropdown" id={id} role="listbox">
+          {!shown.length ? <div className="empty">No {noun} match “{q}”.</div> : null}
+          {shown.map((o, i) => (
+            <button
+              key={o.key}
+              type="button"
+              role="option"
+              aria-selected={o.key === value}
+              data-active={i === active}
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => pick(o.key)}
+            >
+              <span style={{ fontWeight: o.key === value ? 700 : 400 }}>{o.label}</span>
+              {o.meta ? <span className="meta">{o.meta}</span> : null}
+            </button>
+          ))}
+          {matches.length > LIMIT ? <div className="empty">Showing {LIMIT} of {matches.length.toLocaleString('en-IN')}. Keep typing to narrow down.</div> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function Loading({ text = 'Loading…' }: { text?: string }) {
   return <div className="loading"><span className="spinner" />{text}</div>;
 }

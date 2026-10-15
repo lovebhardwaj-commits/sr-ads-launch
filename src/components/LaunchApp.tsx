@@ -9,7 +9,7 @@ import type { AdAccount, AdsetLite, CampaignLite, FormState, LaunchResult, Mode 
 import LaunchForm from './LaunchForm';
 import { AdsetPicker, CampaignPicker } from './Pickers';
 import ResultView from './ResultView';
-import { Loading, Select } from './ui';
+import { Loading, SearchSelect } from './ui';
 
 type View =
   | { kind: 'home' }
@@ -18,6 +18,9 @@ type View =
   | { kind: 'dup-dest' }
   | { kind: 'form'; mode: Mode }
   | { kind: 'done'; result: LaunchResult; mode: Mode };
+
+/** Meta account_status codes; active (1) shows nothing. */
+const ACCOUNT_STATUS: Record<number, string> = { 2: 'Disabled', 3: 'Unsettled', 7: 'Pending review', 8: 'Pending settlement', 9: 'In grace period', 100: 'Pending closure', 101: 'Closed' };
 
 const CHOICES = [
   { key: 'new', title: 'New Campaign + Ad Set', text: 'Create a brand-new campaign and its first ad set together.' },
@@ -96,11 +99,18 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
         ) : accounts.data && !accounts.data.length ? (
           <div className="notice warn">No ad accounts found for this Facebook login. Ask a business admin to give you access to an ad account.</div>
         ) : (
-          <Select
+          <SearchSelect
             value={accountId}
-            onChange={changeAccount}
+            onChange={(id) => { if (id !== accountId) changeAccount(id); }}
             ariaLabel="Ad account"
-            options={(accounts.data || []).map((a) => ({ key: a.id, label: a.name || a.account_id }))}
+            noun="ad accounts"
+            placeholder="Select an ad account..."
+            searchPlaceholder={`Search ${(accounts.data || []).length.toLocaleString('en-IN')} ad accounts by name or ID`}
+            options={(accounts.data || []).map((a) => ({
+              key: a.id,
+              label: a.name || a.account_id,
+              meta: [a.account_id, ACCOUNT_STATUS[a.account_status ?? 1]].filter(Boolean).join(' · '),
+            }))}
           />
         )}
       </div>
