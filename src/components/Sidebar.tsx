@@ -1,5 +1,6 @@
 'use client';
-import { Database, FileText, History, LineChart, List, LogOut, Moon, PanelLeft, Rocket, Sun, Target } from 'lucide-react';
+import { Database, FileText, History, LineChart, List, LogOut, Moon, PanelLeft, Rocket, Sun, Target, Terminal } from 'lucide-react';
+import { toggleLog, useApiLog } from '@/lib/api-log';
 import { useEffect, useState } from 'react';
 
 const NAV = [
@@ -15,6 +16,8 @@ const NAV = [
 export default function Sidebar({ name, picture }: { name: string; picture?: string }) {
   const [wide, setWide] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const log = useApiLog();
+  const errors = log.groups.filter((g) => !g.ok || g.calls.some((c) => !c.ok)).length;
 
   useEffect(() => {
     setTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
@@ -49,6 +52,11 @@ export default function Sidebar({ name, picture }: { name: string; picture?: str
           <span className="nav-label">{label}</span>
         </button>
       ))}
+      <button type="button" className="nav-btn" onClick={toggleLog} aria-pressed={log.open} aria-current={log.open ? 'page' : undefined} aria-label="API log" title="API log" style={{ position: 'relative' }}>
+        <Terminal size={20} strokeWidth={1.6} />
+        <span className="nav-label">API log</span>
+        {errors ? <span className="nav-dot" aria-label={`${errors} with errors`} /> : null}
+      </button>
       <div className="nav-spacer" />
       <div className="nav-rule" />
       <div className="nav-btn" title={name} aria-label={name}>
