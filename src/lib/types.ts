@@ -49,7 +49,8 @@ export interface FormState {
     catalogEnabled: boolean;
     catalogId: string;
   };
-  budget: { type: 'DAILY' | 'LIFETIME'; amount: string; endDate: string };
+  /** level = where the budget lives; entering an amount at one level disables the other */
+  budget: { level: 'CAMPAIGN' | 'ADSET'; type: 'DAILY' | 'LIFETIME'; amount: string; endDate: string };
   adset: {
     name: string;
     goal: string;
@@ -83,6 +84,8 @@ export interface FormState {
     pageId: string;
     instagramUserId: string;
     format: 'CAROUSEL' | 'SINGLE';
+    /** Meta catalog media: product images, multi-image slideshow per card, or product video when available */
+    media: 'IMAGES' | 'SLIDESHOW' | 'VIDEO';
     message: string;
     headline: string;
     description: string;
@@ -103,8 +106,10 @@ export interface FlowContext {
   objective: string;
   isCatalog: boolean;
   catalogId: string;
-  /** Budget shown on the ad set instead of the campaign */
+  /** Budget lives on the ad set (new campaign with ad set budget, or existing campaign without one) */
   adsetBudget: boolean;
+  /** Existing campaign already has a campaign budget */
+  campaignHasBudget: boolean;
   showBudget: boolean;
   /** Catalog ad step (new catalog ad sets need a template ad; duplicates copy their ads) */
   needsAd: boolean;

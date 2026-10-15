@@ -38,7 +38,9 @@ export function buildTargeting(form: FormState, ctx: FlowContext, base?: any, sa
     if (ca.exclude) {
       spec.exclusions = [{ retention_seconds: ca.excludeDays * day, rule: { event: { eq: 'Purchase' } } }];
     }
-    t = { geo_locations: geo(form), product_audience_specs: [spec], targeting_automation: { advantage_audience: 0 } };
+    t = { geo_locations: geo(form), age_min: a.ageMin, age_max: a.ageMax, product_audience_specs: [spec], targeting_automation: { advantage_audience: 0 } };
+    if (a.gender !== 'ALL') t.genders = [a.gender === 'MALE' ? 1 : 2];
+    if (a.locales.length) t.locales = a.locales.map((l) => l.key);
   } else if (a.audienceType === 'SAVED' && saved) {
     t = { ...saved };
     if (!t.targeting_automation) t.targeting_automation = { advantage_audience: 0 };
@@ -80,10 +82,16 @@ export function campaignParams(form: FormState, ctx: FlowContext, currency: stri
     objective: ctx.objective,
     status: 'PAUSED',
     special_ad_categories: [],
-    bid_strategy: c.bidStrategy,
   };
-  const amount = toMinorUnits(form.budget.amount, currency);
-  if (form.budget.type === 'DAILY') p.daily_budget = amount; else p.lifetime_budget = amount;
+  if (ctx.adsetBudget) {
+    // Ad set budgets: Meta requires this flag on campaigns without a campaign budget.
+    p.is_adset_budget_sharing_enabled = false;
+  } else {
+    // Advantage+ campaign budget
+    p.bid_strategy = c.bidStrategy;
+    const amount = toMinorUnits(form.budget.amount, currency);
+    if (form.budget.type === 'DAILY') p.daily_budget = amount; else p.lifetime_budget = amount;
+  }
   if (ctx.isCatalog) p.promoted_object = { product_catalog_id: c.catalogId };
   return p;
 }
@@ -104,7 +112,7 @@ export function adsetParams(form: FormState, ctx: FlowContext, currency: string,
 
   if (ctx.isCatalog) {
     p.promoted_object = { product_set_id: a.productSetId };
-    if (goal.optimization !== 'LINK_CLICKS') p.promoted_object.custom_event_type = goal.fixedEvent || 'PURCHASE';
+    if (goal.optimization !== 'LINK_CLICKS') p.promoted_object.custom_event_type = goal.fixedEvent || a.event || 'PURCHASE';
   } else if (goal.pixel) {
     p.promoted_object = { pixel_id: a.pixelId, custom_event_type: goal.fixedEvent || a.event };
   }
@@ -114,7 +122,7 @@ export function adsetParams(form: FormState, ctx: FlowContext, currency: string,
   if (ctx.adsetBudget) {
     const amount = toMinorUnits(form.budget.amount, currency);
     if (form.budget.type === 'DAILY') p.daily_budget = amount; else p.lifetime_budget = amount;
-    p.bid_strategy = 'LOWEST_COST_WITHOUT_CAP';
+    p.bid_strategy = ctx.needsCampaign ? form.campaign.bidStrategy : 'LOWEST_COST_WITHOUT_CAP';
   }
   if (form.budget.type === 'LIFETIME' && ctx.showBudget && form.budget.endDate) {
     p.end_time = new Date(form.budget.endDate).toISOString();
@@ -139,6 +147,8 @@ export function creativeParams(form: FormState) {
   };
   if (ad.format === 'SINGLE') template.force_single_link = true;
   else template.multi_share_end_card = ad.endCard;
+  // Multiple images per product, animated inside each carousel card.
+  if (ad.format === 'CAROUSEL' && ad.media === 'SLIDESHOW') template.format_option = 'carousel_slideshows';
   const story: any = { page_id: ad.pageId, template_data: template };
   if (ad.instagramUserId) story.instagram_user_id = ad.instagramUserId;
   const urlTags = buildUrlTags(ad.urlTags || {});
@@ -147,6 +157,8 @@ export function creativeParams(form: FormState) {
     product_set_id: form.adset.productSetId,
     object_story_spec: story,
     ...(urlTags ? { url_tags: urlTags } : {}),
+    // Show product videos from the catalog where products have them.
+    ...(ad.media === 'VIDEO' ? { degrees_of_freedom_spec: { creative_features_spec: { media_type_automation: { enroll_status: 'OPT_IN' } } } } : {}),
   };
 }
 

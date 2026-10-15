@@ -26,7 +26,7 @@ async function safe<T>(fn: () => Promise<T>): Promise<T | { unavailable: string 
 async function handleGet(action: string, q: URLSearchParams, token: string): Promise<any> {
   switch (action) {
     case 'adaccounts':
-      return graph.list('me/adaccounts', token, { fields: 'id,account_id,name,currency,account_status,business{id,name}', limit: 100 });
+      return graph.list('me/adaccounts', token, { fields: 'id,account_id,name,currency,account_status,business{id,name}', limit: 100 }, 20);
 
     case 'campaigns':
       return graph.list(`${act(q.get('account'))}/campaigns`, token, {
@@ -76,7 +76,7 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
     case 'products': {
       const set = q.get('set');
       const path = set ? `${set}/products` : `${need(q.get('catalog'), 'catalog')}/products`;
-      const res = await graph.get<{ data: any[] }>(path, token, { fields: 'id,name,price,sale_price,image_url,url,brand', limit: 6 });
+      const res = await graph.get<{ data: any[] }>(path, token, { fields: 'id,name,price,sale_price,image_url,additional_image_urls,url,brand', limit: 6 });
       return res.data;
     }
 

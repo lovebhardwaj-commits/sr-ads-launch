@@ -15,7 +15,7 @@ export function defaultForm(catalog = false): FormState {
       catalogEnabled: catalog,
       catalogId: '',
     },
-    budget: { type: 'DAILY', amount: '', endDate: '' },
+    budget: { level: 'CAMPAIGN', type: 'DAILY', amount: '', endDate: '' },
     adset: {
       name: '',
       goal: 'CONVERSIONS',
@@ -46,6 +46,7 @@ export function defaultForm(catalog = false): FormState {
       pageId: '',
       instagramUserId: '',
       format: 'CAROUSEL',
+      media: 'IMAGES',
       message: 'Still thinking about it? {{product.name}} is waiting for you.',
       headline: '{{product.name}}',
       description: '{{product.current_price}}',
@@ -65,8 +66,8 @@ export function buildContext(mode: Mode, form: FormState, campaign?: CampaignLit
     ? form.campaign.catalogEnabled && objective === 'OUTCOME_SALES'
     : !!existingCatalog;
   const catalogId = needsCampaign ? form.campaign.catalogId : existingCatalog;
-  const campaignHasBudget = !!(campaign?.daily_budget || campaign?.lifetime_budget);
-  const adsetBudget = !needsCampaign && !campaignHasBudget;
+  const campaignHasBudget = !needsCampaign && !!(campaign?.daily_budget || campaign?.lifetime_budget);
+  const adsetBudget = needsCampaign ? form.budget.level === 'ADSET' : !campaignHasBudget;
   const isDup = mode === 'DUP_NEW' || mode === 'DUP_EXISTING';
   const sourceIsCatalog = !!source?.promoted_object?.product_set_id;
   return {
@@ -76,6 +77,7 @@ export function buildContext(mode: Mode, form: FormState, campaign?: CampaignLit
     isCatalog,
     catalogId,
     adsetBudget,
+    campaignHasBudget,
     showBudget: needsCampaign || adsetBudget,
     needsAd: isCatalog && !isDup,
     catalogLocked: !needsCampaign || (isDup && sourceIsCatalog),
@@ -96,8 +98,9 @@ export function formFromAdset(src: AdsetLite, currency: string, catalogId?: stri
   if (src.bid_strategy) f.campaign.bidStrategy = src.bid_strategy;
   if (src.bid_amount) f.campaign.bidAmount = fromMinorUnits(src.bid_amount, currency);
 
-  if (src.daily_budget) { f.budget.type = 'DAILY'; f.budget.amount = fromMinorUnits(src.daily_budget, currency); }
-  else if (src.lifetime_budget) { f.budget.type = 'LIFETIME'; f.budget.amount = fromMinorUnits(src.lifetime_budget, currency); }
+  // The original ad set's own budget pre-fills the ad set budget; otherwise start on a campaign budget.
+  if (src.daily_budget) { f.budget = { ...f.budget, level: 'ADSET', type: 'DAILY', amount: fromMinorUnits(src.daily_budget, currency) }; }
+  else if (src.lifetime_budget) { f.budget = { ...f.budget, level: 'ADSET', type: 'LIFETIME', amount: fromMinorUnits(src.lifetime_budget, currency) }; }
 
   const a = f.adset;
   a.name = `${src.name} - Copy`;
@@ -175,8 +178,11 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
     if (opts.bidNeeds === 'bid' && !(parseFloat(c.bidAmount) > 0)) m.push({ key: 'campaign.bidAmount', label: 'Bid amount' });
     if (opts.bidNeeds === 'roas' && !(parseFloat(c.roasFloor) > 0)) m.push({ key: 'campaign.roasFloor', label: 'ROAS goal' });
   }
+  if (ctx.needsCampaign && c.setup === 'ADVANTAGE_PLUS' && form.budget.level === 'ADSET' && form.budget.amount) {
+    m.push({ key: 'budget.level', label: 'Campaign budget (Advantage+ Shopping needs one)' });
+  }
   if (ctx.showBudget) {
-    if (!(parseFloat(form.budget.amount) > 0)) m.push({ key: 'budget.amount', label: 'Budget amount' });
+    if (!(parseFloat(form.budget.amount) > 0)) m.push({ key: 'budget.amount', label: ctx.needsCampaign ? 'Budget (campaign or ad set)' : 'Ad set budget' });
     if (form.budget.type === 'LIFETIME') {
       const end = form.budget.endDate ? new Date(form.budget.endDate).getTime() : 0;
       if (!end || end < Date.now() + 3600_000) m.push({ key: 'budget.endDate', label: 'End date (at least 1 hour ahead)' });
@@ -185,6 +191,7 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
   if (!a.name.trim()) m.push({ key: 'adset.name', label: 'Ad set name' });
   if (ctx.isCatalog) {
     if (!a.productSetId) m.push({ key: 'adset.productSetId', label: 'Product set' });
+    if (!a.pixelId) m.push({ key: 'adset.pixelId', label: 'Pixel / dataset' });
     if (a.catalogAudience === 'RETARGET' && a.retargetPreset === 'CUSTOM' && !a.retargetEvents.length) m.push({ key: 'adset.retargetEvents', label: 'At least one event to include' });
     if (a.catalogAudience === 'RETARGET' && (a.retargetPreset === 'UPSELL' || a.retargetPreset === 'CROSS_SELL') && !a.crossSellSourceSetId) m.push({ key: 'adset.crossSellSourceSetId', label: 'Product set people interacted with' });
     if (!opts.catalogReady) m.push({ key: 'catalog.ready', label: 'Catalog readiness checks' });
