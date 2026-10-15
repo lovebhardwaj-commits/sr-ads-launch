@@ -3,7 +3,7 @@ import { ChevronLeft } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '@/lib/client-api';
 import {
-  AGES, ATTRIBUTION, BID_STRATEGIES, CATALOG_EVENTS, CONVERSION_EVENTS, OBJECTIVES, PLATFORMS,
+  AGES, ATTRIBUTION, BID_STRATEGIES, CATALOG_EVENTS, CONVERSION_EVENTS, OBJECTIVES, PLATFORMS, RETARGET_PRESETS,
   currencySymbol, goalsFor, objectiveLabel,
 } from '@/lib/constants';
 import { buildContext, validate } from '@/lib/form';
@@ -83,6 +83,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
   );
 
   const retarget = ctx.isCatalog && a.catalogAudience !== 'BROAD';
+  const upsellOrCross = retarget && (a.retargetPreset === 'UPSELL' || a.retargetPreset === 'CROSS_SELL');
   const setOptions = (productSets.data || []).map((s) => ({ key: s.id, label: `${s.name}${s.product_count != null ? ` (${s.product_count.toLocaleString('en-IN')} products)` : ''}` }));
 
   return (
@@ -119,7 +120,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
                 <Toggle
                   checked={c.catalogEnabled}
                   onChange={(v) => { if (mode === 'NEW') up('campaign', { catalogEnabled: v }); }}
-                  label={<span className="strong">Catalog ads</span>}
+                  label={<span className="strong">Catalog</span>}
                 />
               </Field>
             ) : null}
@@ -186,7 +187,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
       <h2 className="section-title">Ad Set</h2>
       <div className="card">
         <Field label="Ad set name">
-          <TextInput value={a.name} onChange={(e) => up('adset', { name: e.target.value })} placeholder={ctx.isCatalog ? 'e.g. Catalog - Viewed or carted 14d' : 'e.g. Advantage+ Audience - Broad'} />
+          <TextInput value={a.name} onChange={(e) => up('adset', { name: e.target.value })} placeholder={ctx.isCatalog ? 'e.g. Catalog - Viewed or added to cart 14d' : 'e.g. Advantage+ Audience - Broad'} />
         </Field>
 
         {ctx.isCatalog ? (
@@ -196,38 +197,51 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
                 <Select value={a.productSetId} onChange={(v) => up('adset', { productSetId: v })} options={setOptions} placeholder={ctx.catalogId ? 'Select a product set…' : 'Pick a catalog first'} disabled={!ctx.catalogId} />
               )}
             </Field>
-            <Field label="Who should see these products">
+            <Field label="Audience">
               <Segmented
                 value={a.catalogAudience}
                 onChange={(v) => up('adset', { catalogAudience: v })}
                 options={[
-                  { key: 'RETARGET', label: 'Win back browsers' },
-                  { key: 'BROAD', label: 'Find new buyers' },
-                  { key: 'CROSS_SELL', label: 'Sell more to customers' },
+                  { key: 'RETARGET', label: 'Retarget ads to people who interacted with your products' },
+                  { key: 'BROAD', label: 'Broad audience' },
                 ]}
               />
             </Field>
             {retarget ? (
               <>
-                {a.catalogAudience === 'CROSS_SELL' ? (
-                  <Field label="Shoppers who engaged with" hint="People who engaged with these products see products from the product set above.">
+                <Field label="Retargeting option">
+                  <Select value={a.retargetPreset} onChange={(v) => up('adset', { retargetPreset: v })} options={RETARGET_PRESETS} />
+                </Field>
+                {upsellOrCross ? (
+                  <Field
+                    label="Product set people interacted with"
+                    hint={a.retargetPreset === 'UPSELL'
+                      ? 'People who viewed or added these products to cart are shown products from the product set above.'
+                      : 'People who purchased these products are shown products from the product set above.'}
+                  >
                     <Select value={a.crossSellSourceSetId} onChange={(v) => up('adset', { crossSellSourceSetId: v })} options={setOptions} placeholder="Select a product set…" />
                   </Field>
                 ) : null}
-                <Field label={a.catalogAudience === 'CROSS_SELL' ? 'Shopper actions' : 'Show products to people who'}>
-                  <CheckPills value={a.retargetEvents} onChange={(v) => up('adset', { retargetEvents: v })} options={a.catalogAudience === 'CROSS_SELL' ? CATALOG_EVENTS : CATALOG_EVENTS.filter((e) => e.key !== 'Purchase')} />
-                </Field>
+                {a.retargetPreset === 'CUSTOM' ? (
+                  <>
+                    <Field label="Include people who">
+                      <CheckPills value={a.retargetEvents} onChange={(v) => up('adset', { retargetEvents: v })} options={CATALOG_EVENTS} />
+                    </Field>
+                    <Field>
+                      <Toggle checked={a.excludePurchasers} onChange={(v) => up('adset', { excludePurchasers: v })} label="Exclude people who purchased" />
+                    </Field>
+                  </>
+                ) : null}
                 <div className="row field">
-                  <Field label="In the last">
+                  <Field label="In the past">
                     <Select value={String(a.retargetDays)} onChange={(v) => up('adset', { retargetDays: Number(v) })} options={RETARGET_DAYS} />
                   </Field>
-                  <Field label="Exclude buyers from the last">
-                    <Select value={String(a.excludeDays)} onChange={(v) => up('adset', { excludeDays: Number(v) })} options={RETARGET_DAYS} disabled={!a.excludePurchasers} />
-                  </Field>
+                  {a.retargetPreset === 'CUSTOM' && a.excludePurchasers ? (
+                    <Field label="Exclude people who purchased in the past">
+                      <Select value={String(a.excludeDays)} onChange={(v) => up('adset', { excludeDays: Number(v) })} options={RETARGET_DAYS} />
+                    </Field>
+                  ) : null}
                 </div>
-                <Field>
-                  <Toggle checked={a.excludePurchasers} onChange={(v) => up('adset', { excludePurchasers: v })} label="Don't show products to people who already bought them" />
-                </Field>
               </>
             ) : null}
           </>

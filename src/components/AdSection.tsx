@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo } from 'react';
 import { apiGet } from '@/lib/client-api';
-import { CTAS, PRODUCT_TOKENS } from '@/lib/constants';
+import { CTAS, PRODUCT_TOKENS, URL_DYNAMIC_PARAMS, UTM_FIELDS, buildUrlTags } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
 import type { FormState } from '@/lib/types';
 import { Field, Loading, Segmented, Select, TextInput, Toggle } from './ui';
@@ -64,6 +64,7 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
 
   const sample = useMemo(() => (products.data || []).slice(0, ad.format === 'SINGLE' ? 1 : 5), [products.data, ad.format]);
   const ctaLabel = CTAS.find((c) => c.key === ad.cta)?.label || 'Shop now';
+  const urlTags = buildUrlTags(ad.urlTags || {});
 
   return (
     <div className="card">
@@ -85,7 +86,7 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
         <TextInput value={ad.name} onChange={(e) => setAd({ name: e.target.value })} placeholder={`e.g. ${form.adset.name || 'Catalog'} - Carousel`} />
       </Field>
       <Field label="Format">
-        <Segmented value={ad.format} onChange={(v) => setAd({ format: v })} options={[{ key: 'CAROUSEL', label: 'Carousel' }, { key: 'SINGLE', label: 'Single image' }]} />
+        <Segmented value={ad.format} onChange={(v) => setAd({ format: v })} options={[{ key: 'CAROUSEL', label: 'Carousel' }, { key: 'SINGLE', label: 'Single image or video' }]} />
       </Field>
       <Field label="Primary text">
         <textarea className="input" value={ad.message} onChange={(e) => setAd({ message: e.target.value })} rows={3} />
@@ -105,15 +106,37 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
         <Field label="Call to action">
           <Select value={ad.cta} onChange={(v) => setAd({ cta: v })} options={CTAS} />
         </Field>
-        <Field label="Website URL" hint="Used for the end card. Each product card opens its own product page.">
+        <Field label="See more URL" hint="Where the card at the end sends people. Each product card opens its own product page.">
           <TextInput value={ad.link} onChange={(e) => setAd({ link: e.target.value })} placeholder="https://yourstore.com" />
         </Field>
       </div>
       {ad.format === 'CAROUSEL' ? (
         <Field>
-          <Toggle checked={ad.endCard} onChange={(v) => setAd({ endCard: v })} label="Add an end card that links to your website" />
+          <Toggle checked={ad.endCard} onChange={(v) => setAd({ endCard: v })} label="Add a card at the end with your Page profile picture" />
         </Field>
       ) : null}
+
+      <h3 className="label strong" style={{ marginTop: 22, fontSize: 13 }}>Tracking</h3>
+      <div className="row field" style={{ marginTop: 6 }}>
+        {UTM_FIELDS.slice(0, 2).map((f) => (
+          <Field key={f.key} label={f.label}>
+            <TextInput value={ad.urlTags[f.key]} placeholder={f.placeholder} onChange={(e) => setAd({ urlTags: { ...ad.urlTags, [f.key]: e.target.value } })} />
+          </Field>
+        ))}
+      </div>
+      <div className="row field">
+        {UTM_FIELDS.slice(2, 4).map((f) => (
+          <Field key={f.key} label={f.label}>
+            <TextInput value={ad.urlTags[f.key]} placeholder={f.placeholder} onChange={(e) => setAd({ urlTags: { ...ad.urlTags, [f.key]: e.target.value } })} />
+          </Field>
+        ))}
+      </div>
+      <Field label={UTM_FIELDS[4].label}>
+        <TextInput value={ad.urlTags.term} placeholder={UTM_FIELDS[4].placeholder} onChange={(e) => setAd({ urlTags: { ...ad.urlTags, term: e.target.value } })} />
+      </Field>
+      <Field label="URL parameters" hint={<>Added to every product link. Dynamic parameters Meta fills per ad: {URL_DYNAMIC_PARAMS.join(', ')}</>}>
+        <TextInput readOnly value={urlTags || 'No URL parameters'} aria-label="URL parameters" />
+      </Field>
 
       <div className="preview" aria-label="Ad preview">
         <div className="preview-head">
@@ -145,7 +168,7 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
             ) : null}
           </div>
         )}
-        <p className="hint">Preview with {sample.length || 'no'} products from the selected set. Meta picks the products per shopper when the ad runs.</p>
+        <p className="hint">Preview with {sample.length || 'no'} {sample.length === 1 ? 'product' : 'products'} from the selected set. Meta picks the products per shopper when the ad runs.</p>
       </div>
     </div>
   );

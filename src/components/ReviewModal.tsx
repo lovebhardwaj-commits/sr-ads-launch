@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { apiPost, errorText } from '@/lib/client-api';
 import {
-  ATTRIBUTION, BID_STRATEGIES, CATALOG_EVENTS, CONVERSION_EVENTS, CTAS, PLATFORMS, currencySymbol, goalsFor, objectiveLabel,
+  ATTRIBUTION, BID_STRATEGIES, CATALOG_EVENTS, CONVERSION_EVENTS, CTAS, PLATFORMS, RETARGET_PRESETS, buildUrlTags, catalogAudienceSpec, currencySymbol, goalsFor, objectiveLabel,
 } from '@/lib/constants';
 import type { AdAccount, AdsetLite, CampaignLite, FlowContext, FormState, LaunchResult, Mode } from '@/lib/types';
 import type { ProductSet } from './LaunchForm';
@@ -53,13 +53,17 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
   rows.push(['Ad set', a.name]);
   if (ctx.isCatalog) {
     rows.push(['Product set', setName(a.productSetId)]);
-    if (a.catalogAudience === 'BROAD') rows.push(['Shoppers', 'Find new buyers (broad)']);
+    if (a.catalogAudience === 'BROAD') rows.push(['Catalog audience', 'Broad audience']);
     else {
-      const ev = a.retargetEvents.map((e) => CATALOG_EVENTS.find((x) => x.key === e)?.label.toLowerCase()).join(' or ');
-      const who = `${ev} in the last ${a.retargetDays} days${a.excludePurchasers ? `, excluding buyers from the last ${a.excludeDays} days` : ''}`;
-      rows.push(['Shoppers', a.catalogAudience === 'CROSS_SELL'
-        ? `Engaged with ${setName(a.crossSellSourceSetId)}: ${who}`
-        : who.charAt(0).toUpperCase() + who.slice(1)]);
+      const ca = catalogAudienceSpec(a);
+      const preset = RETARGET_PRESETS.find((p) => p.key === a.retargetPreset)?.label || a.retargetPreset;
+      let detail = `${preset}, in the past ${a.retargetDays} days`;
+      if (a.retargetPreset === 'UPSELL' || a.retargetPreset === 'CROSS_SELL') detail = `${preset}: people who interacted with ${setName(a.crossSellSourceSetId)}, in the past ${a.retargetDays} days`;
+      if (a.retargetPreset === 'CUSTOM') {
+        const ev = ca.events.map((e) => CATALOG_EVENTS.find((x) => x.key === e)?.label.toLowerCase()).join(' or ');
+        detail = `Custom combination: ${ev} in the past ${a.retargetDays} days${ca.exclude ? `, excluding people who purchased in the past ${ca.excludeDays} days` : ''}`;
+      }
+      rows.push(['Catalog audience', `Retarget ads to people who interacted with your products. ${detail}`]);
     }
   }
   rows.push(['Performance goal', goal?.label || a.goal]);
@@ -78,8 +82,9 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
   rows.push(['Placements', a.placement === 'ADVANTAGE' ? 'Advantage+ Placements' : a.platforms.map((p) => PLATFORMS.find((x) => x.key === p)?.label).join(', ')]);
   if (goal?.attribution) rows.push(['Attribution', ATTRIBUTION.find((x) => x.key === a.attribution)?.label || '']);
   if (ctx.needsAd) {
-    rows.push(['Ad', `${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image'} from catalog, "${CTAS.find((x) => x.key === form.ad.cta)?.label}"`]);
-    rows.push(['Website', form.ad.link]);
+    rows.push(['Ad', `${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} from catalog, "${CTAS.find((x) => x.key === form.ad.cta)?.label}"`]);
+    rows.push(['See more URL', form.ad.link]);
+    rows.push(['URL parameters', buildUrlTags(form.ad.urlTags || {}) || 'None']);
   }
   if (source) rows.push(['Ads copied', `${source.ads?.summary?.total_count ?? 0} from “${source.name}”`]);
 
