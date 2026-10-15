@@ -1,0 +1,43 @@
+/* ── Launch home: three flows (catalog is a toggle inside them) ── */
+.choices { grid-template-columns: repeat(3, 1fr); }
+.choices.two { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 760px) { .choices, .choices.two { grid-template-columns: 1fr; } }
+
+/* ── Product sets & sub-cards ── */
+.set-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; }
+.set-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--input-line); background: var(--input); cursor: pointer; font-size: 12.5px; }
+.set-row input { accent-color: var(--coral); margin: 0; }
+.set-row.on { background: var(--seg-on); border-color: var(--seg-on-line); }
+.set-row .set-name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-row .set-meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.subcard { margin-top: 15px; padding: 14px 14px 16px; border-radius: 10px; border: 1px dashed var(--seg-on-line); background: var(--bg); }
+
+/* ── Placement previews ── */
+.preview-tabs { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.phone { width: 250px; aspect-ratio: 9 / 16; border-radius: 22px; overflow: hidden; position: relative; background: #111; color: #fff; margin: 0 auto; box-shadow: var(--shadow); }
+.phone .bg { position: absolute; inset: 0; background: #222 center / cover no-repeat; filter: blur(18px) brightness(.6); transform: scale(1.2); }
+.phone .bars { position: absolute; top: 8px; left: 10px; right: 10px; display: flex; gap: 3px; z-index: 2; }
+.phone .bars span { flex: 1; height: 2px; border-radius: 2px; background: rgba(255,255,255,.35); }
+.phone .bars span.on { background: #fff; }
+.phone .who { position: absolute; top: 18px; left: 12px; right: 12px; display: flex; align-items: center; gap: 7px; z-index: 2; font-size: 11px; }
+.phone .who .pg { width: 24px; height: 24px; border-radius: 50%; background: var(--grad); display: grid; place-items: center; font-weight: 700; font-size: 10px; }
+.phone .who .s { opacity: .75; font-size: 10px; }
+.phone .story-card { position: absolute; left: 14px; right: 14px; top: 64px; bottom: 92px; background: #fff; color: #111; border-radius: 12px; overflow: hidden; z-index: 2; display: flex; flex-direction: column; }
+.phone .story-card .img { flex: 1; background: #fff center / contain no-repeat; }
+.phone .story-card .meta { padding: 8px 10px; font-size: 11px; }
+.phone .story-card .meta b { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone .cta-pill { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 2; background: #fff; color: #111; font-weight: 700; font-size: 11.5px; padding: 8px 18px; border-radius: 999px; white-space: nowrap; }
+.phone .reel-img { position: absolute; inset: 0; background: #fff center / contain no-repeat; }
+.phone .reel-shade { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 45%, rgba(0,0,0,.75)); }
+.phone .reel-text { position: absolute; left: 12px; right: 52px; bottom: 54px; font-size: 11px; line-height: 1.4; z-index: 2; }
+.phone .reel-text b { display: block; margin-bottom: 4px; }
+.phone .reel-cta { position: absolute; left: 12px; right: 52px; bottom: 16px; z-index: 2; background: rgba(255,255,255,.92); color: #111; border-radius: 8px; padding: 7px 10px; font-size: 11px; display: flex; justify-content: space-between; gap: 8px; }
+.phone .rail { position: absolute; right: 10px; bottom: 60px; display: flex; flex-direction: column; gap: 14px; z-index: 2; }
+.phone .nav { position: absolute; top: 50%; z-index: 3; background: rgba(255,255,255,.85); color: #111; border: 0; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; }
+.media-badge { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.65); color: #fff; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px; display: inline-flex; gap: 4px; align-items: center; z-index: 4; }
+.p-card .img { position: relative; }
+.dots { position: absolute; bottom: 6px; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; }
+.dots span { width: 5px; height: 5px; border-radius: 50%; background: rgba(0,0,0,.25); }
+.dots span.on { background: rgba(0,0,0,.7); }
+
+.subcard + .field { margin-top: 15px; }

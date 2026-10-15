@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import { missingEnv } from '@/lib/config';
 import { getSession } from '@/lib/session';
 import '../api-log.css';
+import '../launch.css';
 
 export const dynamic = 'force-dynamic';
 

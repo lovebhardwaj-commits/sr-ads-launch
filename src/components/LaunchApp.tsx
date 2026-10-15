@@ -26,7 +26,6 @@ const CHOICES = [
   { key: 'new', title: 'New Campaign + Ad Set', text: 'Create a brand-new campaign and its first ad set together.' },
   { key: 'existing', title: 'New Ad Set → Existing Campaign', text: 'Add a new ad set to a campaign you already have.' },
   { key: 'duplicate', title: 'Duplicate an Ad Set', text: "Copy an existing ad set's settings into a new or existing campaign." },
-  { key: 'catalog', title: 'New Catalog Campaign', text: "Show each shopper the products they're most likely to buy, straight from your catalog.", tag: 'New' },
 ] as const;
 
 export default function LaunchApp({ declined }: { declined: string[] }) {
@@ -73,7 +72,6 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
     setCampaign(undefined);
     setSource(undefined);
     if (key === 'new') { setForm(defaultForm()); setView({ kind: 'form', mode: 'NEW' }); }
-    if (key === 'catalog') { setForm(defaultForm(true)); setView({ kind: 'form', mode: 'NEW' }); }
     if (key === 'existing') { setForm(defaultForm()); setView({ kind: 'pick-campaign', next: 'EXISTING' }); }
     if (key === 'duplicate') { setView({ kind: 'pick-adset' }); }
     window.scrollTo({ top: 0 });
@@ -120,7 +118,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
           {CHOICES.map((c) => (
             <button key={c.key} type="button" className="choice" onClick={() => choose(c.key)}>
               <Rocket size={22} strokeWidth={1.8} />
-              <h3>{c.title}{'tag' in c ? <span className="tag">{c.tag}</span> : null}</h3>
+              <h3>{c.title}</h3>
               <p>{c.text}</p>
             </button>
           ))}
@@ -134,6 +132,9 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
             source={view.next === 'DUP_EXISTING' ? source : undefined}
             onPick={(c) => {
               setCampaign(c);
+              // Existing campaign with a campaign budget keeps it; otherwise the ad set needs its own.
+              const level = c.daily_budget || c.lifetime_budget ? 'CAMPAIGN' : 'ADSET';
+              setForm((f) => ({ ...f, budget: { ...f.budget, level } }));
               if (view.next === 'EXISTING') {
                 // Start on the first goal that fits this campaign's objective.
                 const goal = goalsFor(c.objective, !!c.promoted_object?.product_catalog_id)[0].key;
@@ -164,7 +165,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
             Duplicating “{source.name}” (currently in <span className="strong">{source.campaign?.name}</span>) — its settings are pre-filled below, still fully editable.
             {' '}{adsCount === 1 ? 'Its 1 ad' : `Its ${adsCount} ads`} will be duplicated into the new ad set too, using the same creative.
           </p>
-          <div className="choices" style={{ marginTop: 14 }}>
+          <div className="choices two" style={{ marginTop: 14 }}>
             <button type="button" className="choice" onClick={() => setView({ kind: 'form', mode: 'DUP_NEW' })}>
               <Rocket size={22} strokeWidth={1.8} />
               <h3>New Campaign</h3>
