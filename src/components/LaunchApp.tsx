@@ -35,6 +35,11 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
   const [source, setSource] = useState<AdsetLite | undefined>();
   const [fabOpen, setFabOpen] = useState(false);
 
+  // Facebook appends "#_=_" to the URL after login; remove it.
+  useEffect(() => {
+    if (window.location.hash === '#_=_') window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }, []);
+
   // Restore the last ad account, else take the first.
   useEffect(() => {
     if (!accounts.data?.length || accountId) return;

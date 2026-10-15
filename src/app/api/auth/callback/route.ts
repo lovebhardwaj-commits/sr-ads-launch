@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SESSION_COOKIE, STATE_COOKIE } from '@/lib/config';
+import { PERMISSIONS, SESSION_COOKIE, STATE_COOKIE, getScopes } from '@/lib/config';
 import { graph, oauthGet } from '@/lib/graph';
 import { appOrigin } from '@/lib/origin';
 import { sealSession, sessionCookieOptions } from '@/lib/session';
@@ -38,7 +38,13 @@ export async function GET(req: NextRequest) {
     const token = long.access_token;
     const me = await graph.get<{ id: string; name: string; picture?: { data?: { url?: string } } }>('me', token, { fields: 'id,name,picture.width(96).height(96)' });
     const perms = await graph.get<{ data: { permission: string; status: string }[] }>('me/permissions', token);
-    const declined = perms.data.filter((p) => p.status !== 'granted').map((p) => p.permission);
+    // /me/permissions lists everything this Meta app ever asked this user for (other apps or
+    // older logins on the same app ID included). Only flag permissions this app requests.
+    const granted = new Set(perms.data.filter((p) => p.status === 'granted').map((p) => p.permission));
+    const declined = process.env.FACEBOOK_CONFIG_ID
+      // Login for Business: the configuration decides the scopes, so only flag known ones Facebook marks declined.
+      ? perms.data.filter((p) => p.status === 'declined' && PERMISSIONS.some((x) => x.scope === p.permission)).map((p) => p.permission)
+      : getScopes().filter((s) => !granted.has(s));
 
     const sealed = await sealSession({
       token,
