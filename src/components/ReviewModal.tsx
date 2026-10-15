@@ -49,7 +49,7 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
   } else if (campaign) {
     rows.push(['Campaign', `${campaign.name} (existing)`]);
   }
-  if (ctx.showBudget) rows.push([ctx.adsetBudget ? 'Ad set budget' : 'Campaign budget', `${sym}${Number(form.budget.amount).toLocaleString('en-IN')} ${form.budget.type === 'DAILY' ? 'per day' : `lifetime, ends ${new Date(form.budget.endDate).toLocaleString('en-IN')}`}`]);
+  if (ctx.showBudget) rows.push([ctx.adsetBudget ? 'Ad set budget' : 'Campaign budget (Advantage+ campaign budget)', `${sym}${Number(form.budget.amount).toLocaleString('en-IN')} ${form.budget.type === 'DAILY' ? 'per day' : `lifetime, ends ${new Date(form.budget.endDate).toLocaleString('en-IN')}`}`]);
   rows.push(['Ad set', a.name]);
   if (ctx.isCatalog) {
     rows.push(['Product set', setName(a.productSetId)]);
@@ -67,8 +67,9 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
     }
   }
   rows.push(['Performance goal', goal?.label || a.goal]);
-  if (!ctx.isCatalog && goal?.pixel) {
-    rows.push(['Conversion event', CONVERSION_EVENTS.find((e) => e.key === (goal.fixedEvent || a.event))?.label || a.event]);
+  if (ctx.campaignHasBudget) rows.push(['Budget', 'Uses the campaign budget']);
+  if (goal?.pixel || ctx.isCatalog) {
+    if (goal?.pixel) rows.push(['Conversion event', CONVERSION_EVENTS.find((e) => e.key === (goal.fixedEvent || a.event))?.label || a.event]);
     const px = pixels.find((p) => p.id === a.pixelId);
     rows.push(['Pixel', px ? `${px.name} (${px.id})` : a.pixelId]);
   }
@@ -77,13 +78,14 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
   }
   if (!(usesAudience && a.audienceType === 'SAVED')) {
     rows.push(['Locations', a.locations.map((l) => l.name).join(', ')]);
-    if (usesAudience) rows.push(['Age and gender', `${a.ageMin}–${a.ageMax === 65 ? '65+' : a.ageMax}, ${a.gender === 'ALL' ? 'all genders' : a.gender.toLowerCase()}`]);
+    rows.push(['Age and gender', `${a.ageMin}–${a.ageMax === 65 ? '65+' : a.ageMax}, ${a.gender === 'ALL' ? 'all genders' : a.gender.toLowerCase()}`]);
     if (a.locales.length) rows.push(['Languages', a.locales.map((l) => l.name).join(', ')]);
   }
   rows.push(['Placements', a.placement === 'ADVANTAGE' ? 'Advantage+ Placements' : a.platforms.map((p) => PLATFORMS.find((x) => x.key === p)?.label).join(', ')]);
   if (goal?.attribution) rows.push(['Attribution', ATTRIBUTION.find((x) => x.key === a.attribution)?.label || '']);
   if (ctx.needsAd) {
     rows.push(['Ad', `${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} from catalog, "${CTAS.find((x) => x.key === form.ad.cta)?.label}"`]);
+    rows.push(['Catalog media', form.ad.media === 'SLIDESHOW' ? 'Multiple images (slideshow)' : form.ad.media === 'VIDEO' ? 'Product videos' : 'Images']);
     rows.push(['See more URL', form.ad.link]);
     rows.push(['URL parameters', buildUrlTags(form.ad.urlTags || {}) || 'None']);
   }
