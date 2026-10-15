@@ -64,10 +64,10 @@ const GOALS: Record<string, GoalDef[]> = {
   OUTCOME_AWARENESS: [REACH, IMPRESSIONS],
 };
 
-/** Catalog ad sets: products come from the catalog, the pixel comes from the catalog link. */
+/** Catalog ad sets: products come from the catalog; the conversion event is still chosen like normal ad sets. */
 const CATALOG_GOALS: GoalDef[] = [
-  { ...CONVERSIONS, pixel: false, destination: undefined },
-  { ...VALUE, pixel: false, destination: undefined },
+  { ...CONVERSIONS, destination: undefined },
+  { ...VALUE, destination: undefined },
   { ...LINK_CLICKS, destination: undefined },
 ];
 
