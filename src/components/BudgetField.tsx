@@ -42,11 +42,6 @@ export default function BudgetField({ level, budget, onChange, symbol, disabledR
             }}
           />
         </div>
-        {mine && budget.type === 'LIFETIME' && !disabled ? (
-          <Field label="End date">
-            <TextInput type="datetime-local" value={budget.endDate} onChange={(e) => onChange({ endDate: e.target.value })} />
-          </Field>
-        ) : null}
       </div>
     </Field>
   );

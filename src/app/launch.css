@@ -41,3 +41,7 @@
 .dots span.on { background: rgba(0,0,0,.7); }
 
 .subcard + .field { margin-top: 15px; }
+
+/* Ads Manager-style section headings inside the Ad Set card */
+.subhead { margin: 24px 0 10px; padding-top: 16px; border-top: 1px solid var(--card-line); font-size: 13px; font-weight: 700; color: var(--ink); }
+.card > .field:first-child + .subhead { margin-top: 20px; }

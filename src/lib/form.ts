@@ -32,6 +32,7 @@ export function defaultForm(catalog = false): FormState {
       placement: 'ADVANTAGE',
       platforms: ['facebook', 'instagram'],
       attribution: '7C1V',
+      startTime: '',
       productSetId: '',
       catalogAudience: 'RETARGET',
       retargetPreset: 'VIEWED_OR_ATC',
@@ -183,24 +184,26 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
   }
   if (ctx.showBudget) {
     if (!(parseFloat(form.budget.amount) > 0)) m.push({ key: 'budget.amount', label: ctx.needsCampaign ? 'Budget (campaign or ad set)' : 'Ad set budget' });
-    if (form.budget.type === 'LIFETIME') {
-      const end = form.budget.endDate ? new Date(form.budget.endDate).getTime() : 0;
-      if (!end || end < Date.now() + 3600_000) m.push({ key: 'budget.endDate', label: 'End date (at least 1 hour ahead)' });
-    }
+    if (form.budget.type === 'LIFETIME' && !form.budget.endDate) m.push({ key: 'budget.endDate', label: 'End date (lifetime budgets need one)' });
+  }
+  // Schedule
+  const start = a.startTime ? new Date(a.startTime).getTime() : Date.now();
+  if (form.budget.endDate) {
+    const end = new Date(form.budget.endDate).getTime();
+    if (end < Math.max(start, Date.now()) + 3600_000) m.push({ key: 'budget.endDate', label: 'End date at least 1 hour after the start' });
   }
   if (!a.name.trim()) m.push({ key: 'adset.name', label: 'Ad set name' });
   if (ctx.isCatalog) {
     if (!a.productSetId) m.push({ key: 'adset.productSetId', label: 'Product set' });
-    if (!a.pixelId) m.push({ key: 'adset.pixelId', label: 'Pixel / dataset' });
+    if (!a.pixelId) m.push({ key: 'adset.pixelId', label: 'Dataset' });
     if (a.catalogAudience === 'RETARGET' && a.retargetPreset === 'CUSTOM' && !a.retargetEvents.length) m.push({ key: 'adset.retargetEvents', label: 'At least one event to include' });
     if (a.catalogAudience === 'RETARGET' && (a.retargetPreset === 'UPSELL' || a.retargetPreset === 'CROSS_SELL') && !a.crossSellSourceSetId) m.push({ key: 'adset.crossSellSourceSetId', label: 'Product set people interacted with' });
     if (!opts.catalogReady) m.push({ key: 'catalog.ready', label: 'Catalog readiness checks' });
   } else if (opts.goalNeedsPixel) {
-    if (!a.pixelId) m.push({ key: 'adset.pixelId', label: 'Pixel / dataset' });
+    if (!a.pixelId) m.push({ key: 'adset.pixelId', label: 'Dataset' });
   }
   const usesAudience = !ctx.isCatalog || a.catalogAudience === 'BROAD';
   if (usesAudience && a.audienceType === 'SAVED' && !a.savedAudienceId) m.push({ key: 'adset.savedAudienceId', label: 'Saved audience' });
-  if (usesAudience && a.audienceType === 'INTEREST' && !a.interests.length) m.push({ key: 'adset.interests', label: 'At least one interest' });
   if (!(usesAudience && a.audienceType === 'SAVED') && !a.locations.length) m.push({ key: 'adset.locations', label: 'Location' });
   if (a.ageMin > a.ageMax) m.push({ key: 'adset.age', label: 'Min age below max age' });
   if (a.placement === 'MANUAL' && !a.platforms.length) m.push({ key: 'adset.platforms', label: 'At least one placement' });

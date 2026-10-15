@@ -56,14 +56,17 @@ export function buildTargeting(form: FormState, ctx: FlowContext, base?: any, sa
     t.geo_locations = geo(form);
     t.age_min = a.ageMin;
     if (a.audienceType === 'ADVANTAGE') {
-      // With Advantage+ audience, age max and gender are suggestions, not limits.
-      if (a.ageMax < 65) t.age_max = 65;
+      // Advantage+ audience. Controls: location, minimum age, languages.
+      // Audience suggestion (optional): age range, gender, detailed targeting.
       t.targeting_automation = { advantage_audience: 1 };
+      if (a.ageMax < 65) t.age_range = [a.ageMin, a.ageMax];
+      if (a.gender !== 'ALL') t.genders = [a.gender === 'MALE' ? 1 : 2];
+      if (a.interests.length) t.flexible_spec = [{ interests: a.interests.map((i) => ({ id: i.id, name: i.name })) }];
     } else {
       t.age_max = a.ageMax;
       if (a.gender !== 'ALL') t.genders = [a.gender === 'MALE' ? 1 : 2];
       if (a.audienceType === 'INTEREST') {
-        t.flexible_spec = [{ interests: a.interests.map((i) => ({ id: i.id, name: i.name })) }];
+        if (a.interests.length) t.flexible_spec = [{ interests: a.interests.map((i) => ({ id: i.id, name: i.name })) }];
         t.targeting_automation = { advantage_audience: 0 };
       }
       if (a.audienceType === 'SOURCE' && !t.targeting_automation) t.targeting_automation = { advantage_audience: 0 };
@@ -107,7 +110,7 @@ export function adsetParams(form: FormState, ctx: FlowContext, currency: string,
     billing_event: 'IMPRESSIONS',
     optimization_goal: goal.optimization,
     targeting,
-    start_time: new Date(Date.now() + 60_000).toISOString(),
+    start_time: a.startTime ? new Date(a.startTime).toISOString() : new Date(Date.now() + 60_000).toISOString(),
   };
 
   if (ctx.isCatalog) {
@@ -124,9 +127,7 @@ export function adsetParams(form: FormState, ctx: FlowContext, currency: string,
     if (form.budget.type === 'DAILY') p.daily_budget = amount; else p.lifetime_budget = amount;
     p.bid_strategy = ctx.needsCampaign ? form.campaign.bidStrategy : 'LOWEST_COST_WITHOUT_CAP';
   }
-  if (form.budget.type === 'LIFETIME' && ctx.showBudget && form.budget.endDate) {
-    p.end_time = new Date(form.budget.endDate).toISOString();
-  }
+  if (form.budget.endDate) p.end_time = new Date(form.budget.endDate).toISOString();
 
   if (ctx.needsCampaign) {
     const bid = BID_STRATEGIES.find((b) => b.key === form.campaign.bidStrategy);
