@@ -47,14 +47,15 @@ export interface GoalDef {
   attribution?: boolean;
 }
 
-const CONVERSIONS: GoalDef = { key: 'CONVERSIONS', label: 'Conversions', optimization: 'OFFSITE_CONVERSIONS', pixel: true, destination: 'WEBSITE', attribution: true };
-const VALUE: GoalDef = { key: 'VALUE', label: 'Value (purchase value)', optimization: 'VALUE', pixel: true, fixedEvent: 'PURCHASE', destination: 'WEBSITE', attribution: true };
-const LANDING_PAGE_VIEWS: GoalDef = { key: 'LANDING_PAGE_VIEWS', label: 'Landing page views', optimization: 'LANDING_PAGE_VIEWS', destination: 'WEBSITE' };
-const LINK_CLICKS: GoalDef = { key: 'LINK_CLICKS', label: 'Link clicks', optimization: 'LINK_CLICKS', destination: 'WEBSITE' };
-const REACH: GoalDef = { key: 'REACH', label: 'Reach', optimization: 'REACH' };
-const IMPRESSIONS: GoalDef = { key: 'IMPRESSIONS', label: 'Impressions', optimization: 'IMPRESSIONS' };
-const POST_ENGAGEMENT: GoalDef = { key: 'POST_ENGAGEMENT', label: 'Post engagement', optimization: 'POST_ENGAGEMENT', destination: 'ON_POST' };
-const THRUPLAY: GoalDef = { key: 'THRUPLAY', label: 'Video views (ThruPlay)', optimization: 'THRUPLAY', destination: 'ON_VIDEO' };
+// Labels follow Meta Ads Manager's performance goal wording.
+const CONVERSIONS: GoalDef = { key: 'CONVERSIONS', label: 'Maximize number of conversions', optimization: 'OFFSITE_CONVERSIONS', pixel: true, destination: 'WEBSITE', attribution: true };
+const VALUE: GoalDef = { key: 'VALUE', label: 'Maximize value of conversions', optimization: 'VALUE', pixel: true, fixedEvent: 'PURCHASE', destination: 'WEBSITE', attribution: true };
+const LANDING_PAGE_VIEWS: GoalDef = { key: 'LANDING_PAGE_VIEWS', label: 'Maximize number of landing page views', optimization: 'LANDING_PAGE_VIEWS', destination: 'WEBSITE' };
+const LINK_CLICKS: GoalDef = { key: 'LINK_CLICKS', label: 'Maximize number of link clicks', optimization: 'LINK_CLICKS', destination: 'WEBSITE' };
+const REACH: GoalDef = { key: 'REACH', label: 'Maximize daily unique reach', optimization: 'REACH' };
+const IMPRESSIONS: GoalDef = { key: 'IMPRESSIONS', label: 'Maximize number of impressions', optimization: 'IMPRESSIONS' };
+const POST_ENGAGEMENT: GoalDef = { key: 'POST_ENGAGEMENT', label: 'Maximize engagement with a post', optimization: 'POST_ENGAGEMENT', destination: 'ON_POST' };
+const THRUPLAY: GoalDef = { key: 'THRUPLAY', label: 'Maximize ThruPlay views', optimization: 'THRUPLAY', destination: 'ON_VIDEO' };
 
 const GOALS: Record<string, GoalDef[]> = {
   OUTCOME_SALES: [CONVERSIONS, VALUE, LANDING_PAGE_VIEWS, LINK_CLICKS],
@@ -107,7 +108,7 @@ export const BID_STRATEGIES: BidDef[] = [
 ];
 
 export const ATTRIBUTION: (Option & { spec: { event_type: string; window_days: number }[] })[] = [
-  { key: '7C1V', label: '7-day click or 1-day view (recommended)', spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }, { event_type: 'VIEW_THROUGH', window_days: 1 }] },
+  { key: '7C1V', label: '7-day click or 1-day view', spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }, { event_type: 'VIEW_THROUGH', window_days: 1 }] },
   { key: '1C', label: '1-day click only', spec: [{ event_type: 'CLICK_THROUGH', window_days: 1 }] },
   { key: '7C', label: '7-day click only', spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] },
   { key: '1C1V', label: '1-day click or 1-day view', spec: [{ event_type: 'CLICK_THROUGH', window_days: 1 }, { event_type: 'VIEW_THROUGH', window_days: 1 }] },
