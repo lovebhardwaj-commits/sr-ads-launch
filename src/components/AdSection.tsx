@@ -7,7 +7,17 @@ import { useAsync } from '@/lib/hooks';
 import type { FormState } from '@/lib/types';
 import { Field, Loading, SearchSelect, Segmented, Select, TextInput, Toggle } from './ui';
 
-interface Page { id: string; name: string; instagram_business_account?: { id: string; username?: string } }
+interface Page { id: string; name: string; website?: string; link?: string; instagram_business_account?: { id: string; username?: string } }
+
+/** A Page's website field can hold several space-separated sites, with or without https://. */
+function pageWebsite(p?: Page): string {
+  const first = (p?.website || '').split(/[\s,]+/).find(Boolean);
+  if (!first) return '';
+  return /^https?:\/\//i.test(first) ? first : `https://${first}`;
+}
+
+/** Carousel ads show up to 10 cards. */
+const MAX_CARDS = 10;
 interface Product { id: string; name: string; price?: string; sale_price?: string; image_url?: string; additional_image_urls?: string[]; brand?: string; url?: string }
 
 function fill(text: string, p?: Product): string {
@@ -45,14 +55,11 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
   const [placement, setPlacement] = useState<'FEED' | 'STORIES' | 'REELS'>('FEED');
   const [idx, setIdx] = useState(0);
   const [tick, setTick] = useState(0);
+  // Once someone types a See more URL, picking a Page no longer overwrites it.
+  const [linkEdited, setLinkEdited] = useState(false);
 
   const page = pages.data?.find((p) => p.id === ad.pageId);
   const ig = page?.instagram_business_account;
-
-  useEffect(() => {
-    if (!ad.pageId && pages.data?.length === 1) setAd({ pageId: pages.data[0].id });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pages.data]);
 
   // Use the Page's Instagram account by default; clear it if the Page changes.
   useEffect(() => {
@@ -60,14 +67,12 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ad.pageId, ig?.id]);
 
-  // Pre-fill the See more URL from the first product's domain.
+  // See more URL follows the selected Page's website (until edited by hand).
   useEffect(() => {
-    const url = products.data?.find((p) => p.url)?.url;
-    if (!ad.link && url) {
-      try { setAd({ link: new URL(url).origin }); } catch { /* ignore */ }
-    }
+    if (!page || linkEdited) return;
+    setAd({ link: pageWebsite(page) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products.data]);
+  }, [ad.pageId, page?.website]);
 
   // Slideshow preview: rotate each product's images.
   useEffect(() => {
@@ -82,8 +87,11 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ad.format]);
 
-  const sample = useMemo(() => (products.data || []).slice(0, ad.format === 'SINGLE' ? 1 : 5), [products.data, ad.format]);
-  const cur = sample[Math.min(idx, Math.max(sample.length - 1, 0))];
+  const all = products.data || [];
+  // Feed: the carousel shows up to 10 cards. Stories and Reels step through every fetched product.
+  const sample = useMemo(() => all.slice(0, ad.format === 'SINGLE' ? 1 : MAX_CARDS), [all, ad.format]);
+  const steps = ad.format === 'SINGLE' ? sample : all;
+  const cur = steps[Math.min(idx, Math.max(steps.length - 1, 0))];
   const ctaLabel = CTAS.find((c) => c.key === ad.cta)?.label || 'Shop now';
   const urlTags = buildUrlTags(ad.urlTags || {});
   const imageFor = (p: Product) => {
@@ -96,7 +104,7 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
     if (ad.media === 'SLIDESHOW') return <span className="media-badge">{imgs.length > 1 ? `${(tick % imgs.length) + 1}/${imgs.length}` : '1 image'}</span>;
     return null;
   };
-  const pageName = page?.name || 'Your Page';
+  const pageName = page?.name || 'Select a Page';
 
   return (
     <div className="card">
@@ -164,8 +172,8 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
         <Field label="Call to action">
           <Select value={ad.cta} onChange={(v) => setAd({ cta: v })} options={CTAS} />
         </Field>
-        <Field label="See more URL" hint="Where the card at the end sends people. Each product card opens its own product page.">
-          <TextInput value={ad.link} onChange={(e) => setAd({ link: e.target.value })} placeholder="https://yourstore.com" />
+        <Field label="See more URL" hint={page && !linkEdited ? (pageWebsite(page) ? 'From the Page\u2019s website. Each product card opens its own product page.' : 'This Page has no website listed; enter one.') : 'Where the card at the end sends people. Each product card opens its own product page.'}>
+          <TextInput value={ad.link} onChange={(e) => { setLinkEdited(true); setAd({ link: e.target.value }); }} placeholder="https://yourstore.com" />
         </Field>
       </div>
       {ad.format === 'CAROUSEL' ? (
@@ -243,7 +251,7 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
             {placement === 'STORIES' ? (
               <>
                 <div className="bg" style={{ backgroundImage: imageFor(cur) ? `url("${imageFor(cur)}")` : undefined }} />
-                <div className="bars">{sample.map((p, i) => <span key={p.id} className={i <= idx ? 'on' : ''} />)}</div>
+                <div className="bars">{steps.slice(0, 20).map((p, i) => <span key={p.id} className={i <= idx ? 'on' : ''} />)}</div>
                 <div className="who"><div className="pg">{pageName.slice(0, 1)}</div><div><div>{ig?.username ? ig.username : pageName}</div><div className="s">Sponsored</div></div></div>
                 <div className="story-card">
                   <div className="img" style={{ backgroundImage: imageFor(cur) ? `url("${imageFor(cur)}")` : undefined, position: 'relative' }}>{badge(cur)}</div>
@@ -261,17 +269,20 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
                 <div className="reel-cta"><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fill(ad.headline, cur) || cur.name}</span><b>{ctaLabel}</b></div>
               </>
             )}
-            {sample.length > 1 ? (
+            {steps.length > 1 ? (
               <>
                 <button type="button" className="nav" style={{ left: 6 }} aria-label="Previous product" onClick={() => setIdx((i) => Math.max(0, i - 1))}><ChevronLeft size={14} /></button>
-                <button type="button" className="nav" style={{ right: 6 }} aria-label="Next product" onClick={() => setIdx((i) => Math.min(sample.length - 1, i + 1))}><ChevronRight size={14} /></button>
+                <button type="button" className="nav" style={{ right: 6 }} aria-label="Next product" onClick={() => setIdx((i) => Math.min(steps.length - 1, i + 1))}><ChevronRight size={14} /></button>
               </>
             ) : null}
           </div>
         ) : null}
         <p className="hint">
           {placement === 'FEED' ? 'Facebook and Instagram feed.' : placement === 'STORIES' ? 'Stories: catalog images are shown 1:1 inside the story frame.' : 'Reels: product images fill the frame; Meta may crop them.'}
-          {' '}Preview uses {sample.length || 'no'} {sample.length === 1 ? 'product' : 'products'} from the selected set. Meta picks the products per shopper when the ad runs.
+          {' '}{placement === 'FEED'
+            ? `Showing ${sample.length} of ${all.length}${all.length >= 25 ? '+' : ''} products${ad.format === 'CAROUSEL' ? ' (carousel ads show up to 10 cards)' : ''}.`
+            : `Product ${Math.min(idx + 1, steps.length)} of ${steps.length}${all.length >= 25 && ad.format === 'CAROUSEL' ? '+' : ''}.`}
+          {' '}Meta picks the products per shopper when the ad runs.
         </p>
       </div>
     </div>
