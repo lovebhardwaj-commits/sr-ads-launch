@@ -69,7 +69,9 @@ export interface FormState {
     attribution: string;
     // catalog only
     productSetId: string;
-    catalogAudience: 'RETARGET' | 'BROAD' | 'CROSS_SELL';
+    catalogAudience: 'RETARGET' | 'BROAD';
+    /** Meta's retargeting presets; UPSELL / CROSS_SELL target people from crossSellSourceSetId */
+    retargetPreset: 'VIEWED_OR_ATC' | 'ATC' | 'UPSELL' | 'CROSS_SELL' | 'CUSTOM';
     retargetEvents: string[];
     retargetDays: number;
     excludePurchasers: boolean;
@@ -87,8 +89,12 @@ export interface FormState {
     cta: string;
     link: string;
     endCard: boolean;
+    /** URL parameters (UTM) appended to every product link */
+    urlTags: UrlTags;
   };
 }
+
+export interface UrlTags { source: string; medium: string; campaign: string; content: string; term: string }
 
 /** What the current screen is building. Derived from mode + chosen campaign. */
 export interface FlowContext {

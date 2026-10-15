@@ -34,6 +34,7 @@ export function defaultForm(catalog = false): FormState {
       attribution: '7C1V',
       productSetId: '',
       catalogAudience: 'RETARGET',
+      retargetPreset: 'VIEWED_OR_ATC',
       retargetEvents: ['ViewContent', 'AddToCart'],
       retargetDays: 14,
       excludePurchasers: true,
@@ -51,6 +52,7 @@ export function defaultForm(catalog = false): FormState {
       cta: 'SHOP_NOW',
       link: '',
       endCard: true,
+      urlTags: { source: 'facebook', medium: 'paid_social', campaign: '{{campaign.name}}', content: '{{ad.name}}', term: '' },
     },
   };
 }
@@ -141,11 +143,17 @@ export function formFromAdset(src: AdsetLite, currency: string, catalogId?: stri
       a.retargetDays = days;
       a.excludePurchasers = !!spec.exclusions?.length;
       if (spec.exclusions?.[0]?.retention_seconds) a.excludeDays = Math.round(spec.exclusions[0].retention_seconds / 86400);
+      a.catalogAudience = 'RETARGET';
+      const sorted = [...events].sort().join(',');
       if (spec.product_set_id && spec.product_set_id !== a.productSetId) {
-        a.catalogAudience = 'CROSS_SELL';
+        a.retargetPreset = events.includes('Purchase') ? 'CROSS_SELL' : 'UPSELL';
         a.crossSellSourceSetId = spec.product_set_id;
+      } else if (a.excludePurchasers && a.excludeDays === days && sorted === 'AddToCart,ViewContent') {
+        a.retargetPreset = 'VIEWED_OR_ATC';
+      } else if (a.excludePurchasers && a.excludeDays === days && sorted === 'AddToCart') {
+        a.retargetPreset = 'ATC';
       } else {
-        a.catalogAudience = 'RETARGET';
+        a.retargetPreset = 'CUSTOM';
       }
     } else {
       a.catalogAudience = 'BROAD';
@@ -177,8 +185,8 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
   if (!a.name.trim()) m.push({ key: 'adset.name', label: 'Ad set name' });
   if (ctx.isCatalog) {
     if (!a.productSetId) m.push({ key: 'adset.productSetId', label: 'Product set' });
-    if (a.catalogAudience !== 'BROAD' && !a.retargetEvents.length) m.push({ key: 'adset.retargetEvents', label: 'At least one shopper action' });
-    if (a.catalogAudience === 'CROSS_SELL' && !a.crossSellSourceSetId) m.push({ key: 'adset.crossSellSourceSetId', label: 'Product set shoppers engaged with' });
+    if (a.catalogAudience === 'RETARGET' && a.retargetPreset === 'CUSTOM' && !a.retargetEvents.length) m.push({ key: 'adset.retargetEvents', label: 'At least one event to include' });
+    if (a.catalogAudience === 'RETARGET' && (a.retargetPreset === 'UPSELL' || a.retargetPreset === 'CROSS_SELL') && !a.crossSellSourceSetId) m.push({ key: 'adset.crossSellSourceSetId', label: 'Product set people interacted with' });
     if (!opts.catalogReady) m.push({ key: 'catalog.ready', label: 'Catalog readiness checks' });
   } else if (opts.goalNeedsPixel) {
     if (!a.pixelId) m.push({ key: 'adset.pixelId', label: 'Pixel / dataset' });
@@ -194,7 +202,7 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
     if (!ad.pageId) m.push({ key: 'ad.pageId', label: 'Facebook Page' });
     if (!ad.message.trim()) m.push({ key: 'ad.message', label: 'Primary text' });
     if (!ad.headline.trim()) m.push({ key: 'ad.headline', label: 'Headline' });
-    if (!/^https?:\/\/\S+\.\S+/.test(ad.link.trim())) m.push({ key: 'ad.link', label: 'Website URL' });
+    if (!/^https?:\/\/\S+\.\S+/.test(ad.link.trim())) m.push({ key: 'ad.link', label: 'See more URL' });
   }
   return m;
 }

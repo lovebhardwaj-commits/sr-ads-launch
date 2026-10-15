@@ -139,21 +139,67 @@ export const CTAS: Option[] = [
   { key: 'LEARN_MORE', label: 'Learn more' },
 ];
 
+/** Meta's catalog retargeting presets (Ads Manager wording). */
+export const RETARGET_PRESETS: Option[] = [
+  { key: 'VIEWED_OR_ATC', label: 'Viewed or added to cart but not purchased' },
+  { key: 'ATC', label: 'Added to cart but not purchased' },
+  { key: 'UPSELL', label: 'Upsell products' },
+  { key: 'CROSS_SELL', label: 'Cross-sell products' },
+  { key: 'CUSTOM', label: 'Custom combination' },
+];
+
+/** Events usable in a custom combination. */
 export const CATALOG_EVENTS: Option[] = [
-  { key: 'ViewContent', label: 'Viewed a product' },
+  { key: 'ViewContent', label: 'Viewed' },
   { key: 'AddToCart', label: 'Added to cart' },
-  { key: 'InitiateCheckout', label: 'Started checkout' },
   { key: 'Purchase', label: 'Purchased' },
 ];
 
+/** Resolve a retargeting preset into the events, exclusion and product set Meta's audience spec needs. */
+export function catalogAudienceSpec(a: {
+  retargetPreset: string; retargetEvents: string[]; retargetDays: number;
+  excludePurchasers: boolean; excludeDays: number; productSetId: string; crossSellSourceSetId: string;
+}): { events: string[]; exclude: boolean; excludeDays: number; sourceSetId: string } {
+  switch (a.retargetPreset) {
+    case 'VIEWED_OR_ATC': return { events: ['ViewContent', 'AddToCart'], exclude: true, excludeDays: a.retargetDays, sourceSetId: a.productSetId };
+    case 'ATC': return { events: ['AddToCart'], exclude: true, excludeDays: a.retargetDays, sourceSetId: a.productSetId };
+    // Upsell: viewed or added to cart in one set, shown products from the ad set's product set.
+    case 'UPSELL': return { events: ['ViewContent', 'AddToCart'], exclude: false, excludeDays: 0, sourceSetId: a.crossSellSourceSetId };
+    // Cross-sell: purchased from one set, shown products from the ad set's product set.
+    case 'CROSS_SELL': return { events: ['Purchase'], exclude: false, excludeDays: 0, sourceSetId: a.crossSellSourceSetId };
+    default: return { events: a.retargetEvents, exclude: a.excludePurchasers, excludeDays: a.excludeDays, sourceSetId: a.productSetId };
+  }
+}
+
 /** Catalog text tokens Meta fills per product. */
 export const PRODUCT_TOKENS: { token: string; label: string }[] = [
-  { token: '{{product.name}}', label: 'Name' },
+  { token: '{{product.name}}', label: 'Product name' },
   { token: '{{product.price}}', label: 'Price' },
-  { token: '{{product.current_price}}', label: 'Sale price' },
+  { token: '{{product.current_price}}', label: 'Current price' },
   { token: '{{product.brand}}', label: 'Brand' },
   { token: '{{product.description}}', label: 'Description' },
 ];
+
+/** Ads Manager's "Build a URL parameter" fields. */
+export const UTM_FIELDS: { key: 'source' | 'medium' | 'campaign' | 'content' | 'term'; param: string; label: string; placeholder: string }[] = [
+  { key: 'source', param: 'utm_source', label: 'Campaign source', placeholder: 'e.g. facebook' },
+  { key: 'medium', param: 'utm_medium', label: 'Campaign medium', placeholder: 'e.g. paid_social' },
+  { key: 'campaign', param: 'utm_campaign', label: 'Campaign name', placeholder: 'e.g. {{campaign.name}}' },
+  { key: 'content', param: 'utm_content', label: 'Campaign content', placeholder: 'e.g. {{ad.name}}' },
+  { key: 'term', param: 'utm_term', label: 'Campaign term', placeholder: 'Optional' },
+];
+
+/** Meta dynamic URL parameters, filled per ad at delivery. */
+export const URL_DYNAMIC_PARAMS = ['{{campaign.name}}', '{{campaign.id}}', '{{adset.name}}', '{{adset.id}}', '{{ad.name}}', '{{ad.id}}', '{{placement}}', '{{site_source_name}}'];
+
+/** Build the url_tags string: values are URL-encoded, {{dynamic}} parameters kept as-is. */
+export function buildUrlTags(u: Partial<Record<'source' | 'medium' | 'campaign' | 'content' | 'term', string>>): string {
+  const enc = (v: string) => v.split(/(\{\{[^}]+\}\})/).map((part) => (/^\{\{[^}]+\}\}$/.test(part) ? part : encodeURIComponent(part))).join('');
+  return UTM_FIELDS
+    .filter((f) => (u[f.key] || '').trim())
+    .map((f) => `${f.param}=${enc((u[f.key] || '').trim())}`)
+    .join('&');
+}
 
 export const AGES = Array.from({ length: 48 }, (_, i) => i + 18); // 18..65
 

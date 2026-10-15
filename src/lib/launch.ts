@@ -1,5 +1,5 @@
 import 'server-only';
-import { ATTRIBUTION, BID_STRATEGIES, goalDef, toMinorUnits } from './constants';
+import { ATTRIBUTION, BID_STRATEGIES, buildUrlTags, catalogAudienceSpec, goalDef, toMinorUnits } from './constants';
 import { buildContext } from './form';
 import { graph, GraphError } from './graph';
 import type { FlowContext, FormState, LaunchRequest, LaunchResult } from './types';
@@ -30,13 +30,13 @@ export function buildTargeting(form: FormState, ctx: FlowContext, base?: any, sa
 
   if (ctx.isCatalog && a.catalogAudience !== 'BROAD') {
     const day = 86400;
-    const sourceSet = a.catalogAudience === 'CROSS_SELL' ? a.crossSellSourceSetId : a.productSetId;
+    const ca = catalogAudienceSpec(a);
     const spec: any = {
-      product_set_id: sourceSet,
-      inclusions: a.retargetEvents.map((e) => ({ retention_seconds: a.retargetDays * day, rule: { event: { eq: e } } })),
+      product_set_id: ca.sourceSetId,
+      inclusions: ca.events.map((e) => ({ retention_seconds: a.retargetDays * day, rule: { event: { eq: e } } })),
     };
-    if (a.excludePurchasers) {
-      spec.exclusions = [{ retention_seconds: a.excludeDays * day, rule: { event: { eq: 'Purchase' } } }];
+    if (ca.exclude) {
+      spec.exclusions = [{ retention_seconds: ca.excludeDays * day, rule: { event: { eq: 'Purchase' } } }];
     }
     t = { geo_locations: geo(form), product_audience_specs: [spec], targeting_automation: { advantage_audience: 0 } };
   } else if (a.audienceType === 'SAVED' && saved) {
@@ -141,10 +141,12 @@ export function creativeParams(form: FormState) {
   else template.multi_share_end_card = ad.endCard;
   const story: any = { page_id: ad.pageId, template_data: template };
   if (ad.instagramUserId) story.instagram_user_id = ad.instagramUserId;
+  const urlTags = buildUrlTags(ad.urlTags || {});
   return {
     name: `${ad.name.trim() || form.adset.name.trim()} - Catalog creative`,
     product_set_id: form.adset.productSetId,
     object_story_spec: story,
+    ...(urlTags ? { url_tags: urlTags } : {}),
   };
 }
 
