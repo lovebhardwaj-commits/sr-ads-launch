@@ -1,7 +1,38 @@
 import 'server-only';
-import { createHmac } from 'crypto';
+import { AsyncLocalStorage } from 'async_hooks';
+import { createHmac, randomUUID } from 'crypto';
 import { GRAPH_URL } from './config';
-import type { MetaError } from './types';
+import type { GraphCall, MetaError } from './types';
+
+/** Collects the Graph calls made while handling one app request (see api/meta route). */
+export const graphLog = new AsyncLocalStorage<GraphCall[]>();
+
+const SECRET_KEYS = ['access_token', 'appsecret_proof', 'client_secret', 'fb_exchange_token', 'code'];
+const MAX_RESPONSE_CHARS = 40_000;
+
+function readable(params: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (SECRET_KEYS.includes(k) || v === undefined || v === null) continue;
+    if (typeof v === 'string' && /^[[{]/.test(v)) {
+      try { out[k] = JSON.parse(v); continue; } catch { /* keep string */ }
+    }
+    out[k] = v;
+  }
+  return out;
+}
+
+function record(entry: Omit<GraphCall, 'id' | 'response' | 'truncated'>, json: unknown) {
+  const log = graphLog.getStore();
+  if (!log) return;
+  let response: unknown = json;
+  let truncated = false;
+  try {
+    const text = JSON.stringify(json);
+    if (text && text.length > MAX_RESPONSE_CHARS) { response = `${text.slice(0, MAX_RESPONSE_CHARS)}…`; truncated = true; }
+  } catch { response = String(json); }
+  log.push({ id: randomUUID(), ...entry, response, truncated });
+}
 
 export class GraphError extends Error {
   meta: MetaError;
@@ -33,23 +64,36 @@ function proof(token: string): string | undefined {
 async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, token: string, params: Params = {}): Promise<T> {
   const auth: Params = { access_token: token, appsecret_proof: proof(token) };
   const url = path.startsWith('http') ? new URL(path) : new URL(`${GRAPH_URL}/${path.replace(/^\//, '')}`);
+  const started = Date.now();
+  // For logging: what was asked for, minus secrets (paging URLs carry their params in the query string).
+  const asked: Record<string, unknown> = { ...Object.fromEntries(url.searchParams.entries()) };
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) asked[k] = typeof v === 'object' ? JSON.stringify(v) : v;
+  const logPath = url.pathname.replace(/^\/v\d+\.\d+\//, '');
   let res: Response;
-  if (method === 'GET') {
-    const qs = encode({ ...params, ...auth });
-    qs.forEach((v, k) => url.searchParams.set(k, v));
-    res = await fetch(url, { method, cache: 'no-store' });
-  } else {
-    res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: encode({ ...params, ...auth }),
-      cache: 'no-store',
-    });
+  try {
+    if (method === 'GET') {
+      const qs = encode({ ...params, ...auth });
+      qs.forEach((v, k) => url.searchParams.set(k, v));
+      res = await fetch(url, { method, cache: 'no-store' });
+    } else {
+      res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: encode({ ...params, ...auth }),
+        cache: 'no-store',
+      });
+    }
+  } catch (e) {
+    // Network-level failure (timeout, DNS): log it, then surface a readable error.
+    const message = `Couldn't reach Facebook: ${(e as Error).message}`;
+    record({ at: started, method, path: logPath, params: readable(asked), status: 0, ms: Date.now() - started, ok: false }, { error: { message } });
+    throw new GraphError({ message }, 502);
   }
   const text = await res.text();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let json: any;
   try { json = JSON.parse(text); } catch { json = { error: { message: text || res.statusText } }; }
+  record({ at: started, method, path: logPath, params: readable(asked), status: res.status, ms: Date.now() - started, ok: res.ok && !json?.error }, json);
   if (!res.ok || json?.error) {
     const e = json?.error || {};
     throw new GraphError(

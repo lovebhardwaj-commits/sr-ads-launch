@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { graph, GraphError } from '@/lib/graph';
+import { graph, graphLog, GraphError } from '@/lib/graph';
 import { launch } from '@/lib/launch';
 import { getSession } from '@/lib/session';
-import type { LaunchRequest } from '@/lib/types';
+import type { GraphCall, LaunchRequest } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -120,28 +120,33 @@ async function handlePost(action: string, body: any, token: string): Promise<any
   throw new GraphError({ message: `Unknown action ${action}` }, 404);
 }
 
-function errorResponse(e: unknown) {
-  if (e instanceof GraphError) return NextResponse.json({ error: e.meta }, { status: e.status });
-  return NextResponse.json({ error: { message: (e as Error).message || 'Unexpected error' } }, { status: 500 });
+function errorResponse(e: unknown, log: GraphCall[]) {
+  if (e instanceof GraphError) return NextResponse.json({ error: e.meta, log }, { status: e.status });
+  return NextResponse.json({ error: { message: (e as Error).message || 'Unexpected error' }, log }, { status: 500 });
 }
 
+// Every response carries `log`: the Graph API calls made to answer it (shown in the API log panel).
 export async function GET(req: NextRequest, { params }: { params: { action: string } }) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: { message: 'Not logged in' } }, { status: 401 });
+  if (!session) return NextResponse.json({ error: { message: 'Not logged in' }, log: [] }, { status: 401 });
+  const log: GraphCall[] = [];
   try {
-    return NextResponse.json({ data: await handleGet(params.action, req.nextUrl.searchParams, session.token) });
+    const data = await graphLog.run(log, () => handleGet(params.action, req.nextUrl.searchParams, session.token));
+    return NextResponse.json({ data, log });
   } catch (e) {
-    return errorResponse(e);
+    return errorResponse(e, log);
   }
 }
 
 export async function POST(req: NextRequest, { params }: { params: { action: string } }) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: { message: 'Not logged in' } }, { status: 401 });
+  if (!session) return NextResponse.json({ error: { message: 'Not logged in' }, log: [] }, { status: 401 });
+  const log: GraphCall[] = [];
   try {
     const body = await req.json();
-    return NextResponse.json({ data: await handlePost(params.action, body, session.token) });
+    const data = await graphLog.run(log, () => handlePost(params.action, body, session.token));
+    return NextResponse.json({ data, log });
   } catch (e) {
-    return errorResponse(e);
+    return errorResponse(e, log);
   }
 }

@@ -130,4 +130,18 @@ export interface LaunchResult {
   step?: string;
 }
 
+/** One Graph API request, recorded on the server and shown in the API log. Secrets are removed. */
+export interface GraphCall {
+  id: string;
+  at: number;
+  method: string;
+  path: string;
+  params: Record<string, unknown>;
+  status: number;
+  ms: number;
+  ok: boolean;
+  response?: unknown;
+  truncated?: boolean;
+}
+
 export interface MetaError { message: string; title?: string; userMessage?: string; code?: number; subcode?: number; fbtraceId?: string }
