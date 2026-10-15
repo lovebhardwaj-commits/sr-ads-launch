@@ -68,6 +68,8 @@ export interface FormState {
     placement: 'ADVANTAGE' | 'MANUAL';
     platforms: string[];
     attribution: string;
+    /** Schedule: empty = start as soon as published (datetime-local value) */
+    startTime: string;
     // catalog only
     productSetId: string;
     catalogAudience: 'RETARGET' | 'BROAD';

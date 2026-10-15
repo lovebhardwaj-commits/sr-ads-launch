@@ -49,7 +49,7 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
       return graph.list(`${act(q.get('account'))}/saved_audiences`, token, { fields: 'id,name', limit: 100 });
 
     case 'pages':
-      return graph.list('me/accounts', token, { fields: 'id,name,instagram_business_account{id,username}', limit: 100 });
+      return graph.list('me/accounts', token, { fields: 'id,name,website,link,instagram_business_account{id,username}', limit: 100 });
 
     case 'catalogs': {
       const account = await graph.get<{ business?: { id: string } }>(act(q.get('account')), token, { fields: 'business' });
@@ -76,7 +76,7 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
     case 'products': {
       const set = q.get('set');
       const path = set ? `${set}/products` : `${need(q.get('catalog'), 'catalog')}/products`;
-      const res = await graph.get<{ data: any[] }>(path, token, { fields: 'id,name,price,sale_price,image_url,additional_image_urls,url,brand', limit: 6 });
+      const res = await graph.get<{ data: any[] }>(path, token, { fields: 'id,name,price,sale_price,image_url,additional_image_urls,url,brand', limit: 25 });
       return res.data;
     }
 
