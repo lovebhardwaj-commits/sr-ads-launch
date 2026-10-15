@@ -28,8 +28,12 @@ export const GRAPH_VERSION = process.env.META_API_VERSION || 'v23.0';
 export const GRAPH_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 export function missingEnv(): string[] {
-  const required = ['FACEBOOK_APP_ID', 'FACEBOOK_APP_SECRET', 'SESSION_SECRET'];
-  return required.filter((k) => !process.env[k]);
+  const required = ['FACEBOOK_APP_ID', 'FACEBOOK_APP_SECRET', 'SESSION_SECRET', 'APP_URL'];
+  const missing = required.filter((k) => !process.env[k]);
+  // APP_URL must be a full origin, e.g. https://sr-ads-launch.vercel.app
+  const url = process.env.APP_URL;
+  if (url && !/^https:\/\/[^/\s]+\/?$|^http:\/\/localhost(:\d+)?\/?$/.test(url)) missing.push('APP_URL (must look like https://your-domain.com)');
+  return missing;
 }
 
 export const SESSION_COOKIE = 'sr_launch_session';

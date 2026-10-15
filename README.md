@@ -17,9 +17,10 @@ Built with Next.js 14 (App Router), TypeScript and the Meta Marketing API (Graph
 2. Add the environment variables below in **Settings → Environment Variables**, then redeploy.
 3. In your Meta app (developers.facebook.com):
    - Add the **Facebook Login** (or Facebook Login for Business) product.
-   - Under Facebook Login → Settings, add `https://<your-domain>/api/auth/callback` to **Valid OAuth Redirect URIs**.
+   - Under Facebook Login → Settings, add `<APP_URL>/api/auth/callback` to **Valid OAuth Redirect URIs** (exactly the same domain as `APP_URL`).
    - Under App settings → Basic, add your domain to **App domains**.
    - Request **Advanced access** for the permissions listed below (App Review), or test with users who have a role on the app.
+4. Open the app on the `APP_URL` domain. Preview deployment URLs won't log in.
 
 ### Environment variables
 
@@ -28,10 +29,12 @@ Built with Next.js 14 (App Router), TypeScript and the Meta Marketing API (Graph
 | `FACEBOOK_APP_ID` | Yes | Meta app ID |
 | `FACEBOOK_APP_SECRET` | Yes | Meta app secret (also used for `appsecret_proof` on every Graph call) |
 | `SESSION_SECRET` | Yes | Random 32+ character string to encrypt the session cookie (`openssl rand -base64 32`) |
-| `APP_URL` | No | Public URL, e.g. `https://ads-launch.vercel.app`. Defaults to the request host |
+| `APP_URL` | Yes | Production URL, no trailing slash, e.g. `https://sr-ads-launch.vercel.app`. The login callback is always `<APP_URL>/api/auth/callback`; open the app on this domain, not on preview URLs |
 | `META_API_VERSION` | No | Graph API version, default `v23.0` |
 | `FACEBOOK_CONFIG_ID` | No | Facebook Login for Business configuration ID. When set, permissions come from the configuration |
 | `FACEBOOK_SCOPES` | No | Comma-separated override of the permissions requested |
+
+If any required value is missing or `APP_URL` isn't a full `https://` address, the login screen says which one and login stays disabled.
 
 ### Permissions requested
 
@@ -48,7 +51,7 @@ Built with Next.js 14 (App Router), TypeScript and the Meta Marketing API (Graph
 ## Run locally
 
 ```bash
-cp .env.example .env.local   # fill in the three required values
+cp .env.example .env.local   # fill in the four required values (APP_URL=http://localhost:3000)
 npm install
 npm run dev                  # http://localhost:3000
 ```

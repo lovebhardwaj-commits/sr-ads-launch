@@ -9,7 +9,7 @@ export async function GET() {
   const origin = appOrigin();
   const missing = missingEnv();
   if (missing.length) {
-    return NextResponse.redirect(`${origin}/login?error=config&missing=${missing.join(',')}`);
+    return NextResponse.redirect(`${origin}/login?error=config&missing=${encodeURIComponent(missing.join(", "))}`);
   }
   const state = randomBytes(24).toString('hex');
   const url = new URL(`https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth`);
