@@ -89,7 +89,16 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
     rows.push(['See more URL', form.ad.link]);
     rows.push(['URL parameters', buildUrlTags(form.ad.urlTags || {}) || 'None']);
   }
-  if (source) rows.push(['Ads copied', `${source.ads?.summary?.total_count ?? 0} from “${source.name}”`]);
+  if (ctx.needsStandardAd) {
+    const ad = form.ad;
+    rows.push(['Ad', ad.kind === 'POST'
+      ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post`
+      : `New ad with uploaded image${ad.imageName ? ` (${ad.imageName})` : ''}, "${CTAS.find((x) => x.key === ad.cta)?.label}"`]);
+    if (ad.kind === 'UPLOAD') rows.push(['Website', ad.link]);
+    rows.push(['URL parameters', buildUrlTags(ad.urlTags || {}) || 'None']);
+  }
+  if (!ctx.isDup && !ctx.needsAd && !ctx.needsStandardAd) rows.push(['Ad', 'None, add ads later']);
+  if (source) rows.push(['Ads copied', ctx.copyAds ? `${source.ads?.summary?.total_count ?? 0} from “${source.name}”` : 'Not copied']);
 
   const go = async () => {
     setBusy(true);
