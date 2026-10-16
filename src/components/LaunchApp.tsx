@@ -6,6 +6,8 @@ import { goalsFor } from '@/lib/constants';
 import { defaultForm, formFromAdset } from '@/lib/form';
 import { useAsync } from '@/lib/hooks';
 import type { AdAccount, AdsetLite, CampaignLite, FormState, LaunchResult, Mode } from '@/lib/types';
+import AdFirstBuilder from './AdFirstBuilder';
+import AdOnlyReview from './AdOnlyReview';
 import LaunchForm from './LaunchForm';
 import { AdsetPicker, CampaignPicker } from './Pickers';
 import LegalLinks from './LegalLinks';
@@ -17,6 +19,9 @@ type View =
   | { kind: 'pick-campaign'; next: 'EXISTING' | 'DUP_EXISTING' }
   | { kind: 'pick-adset' }
   | { kind: 'dup-dest' }
+  | { kind: 'ad-first' }
+  | { kind: 'ad-dest' }
+  | { kind: 'pick-adset-for-ad' }
   | { kind: 'form'; mode: Mode }
   | { kind: 'done'; result: LaunchResult; mode: Mode };
 
@@ -27,6 +32,7 @@ const CHOICES = [
   { key: 'new', title: 'New Campaign + Ad Set', text: 'Create a brand-new campaign and its first ad set together.' },
   { key: 'existing', title: 'New Ad Set → Existing Campaign', text: 'Add a new ad set to a campaign you already have.' },
   { key: 'duplicate', title: 'Duplicate an Ad Set', text: "Copy an existing ad set's settings into a new or existing campaign." },
+  { key: 'adfirst', title: 'Start with an Ad', text: 'Create a catalog or normal ad first, then add it to an existing ad set or a new one.' },
 ] as const;
 
 export default function LaunchApp({ declined }: { declined: string[] }) {
@@ -37,6 +43,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
   const [campaign, setCampaign] = useState<CampaignLite | undefined>();
   const [source, setSource] = useState<AdsetLite | undefined>();
   const [fabOpen, setFabOpen] = useState(false);
+  const [adTarget, setAdTarget] = useState<AdsetLite | undefined>();
 
   // Facebook appends "#_=_" to the URL after login; remove it.
   useEffect(() => {
@@ -65,6 +72,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
     setForm(defaultForm());
     setCampaign(undefined);
     setSource(undefined);
+    setAdTarget(undefined);
     window.scrollTo({ top: 0 });
   };
 
@@ -75,6 +83,11 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
     if (key === 'new') { setForm(defaultForm()); setView({ kind: 'form', mode: 'NEW' }); }
     if (key === 'existing') { setForm(defaultForm()); setView({ kind: 'pick-campaign', next: 'EXISTING' }); }
     if (key === 'duplicate') { setView({ kind: 'pick-adset' }); }
+    if (key === 'adfirst') {
+      const f = defaultForm();
+      setForm({ ...f, ad: { ...f.ad, adFirst: true } });
+      setView({ kind: 'ad-first' });
+    }
     window.scrollTo({ top: 0 });
   };
 
@@ -126,11 +139,14 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
         </div>
       ) : view.kind === 'pick-campaign' ? (
         <>
-          <button type="button" className="back" onClick={startOver}><ChevronLeft size={13} /> Start over</button>
+          {form.ad.adFirst
+            ? <button type="button" className="back" onClick={() => setView({ kind: 'ad-dest' })}><ChevronLeft size={13} /> Back</button>
+            : <button type="button" className="back" onClick={startOver}><ChevronLeft size={13} /> Start over</button>}
           <CampaignPicker
             account={account}
             title={view.next === 'EXISTING' ? 'Pick a campaign for the new ad set' : 'Pick the campaign the duplicate goes into'}
             source={view.next === 'DUP_EXISTING' ? source : undefined}
+            adFit={form.ad.adFirst ? { isCatalog: form.campaign.catalogEnabled, catalogId: form.campaign.catalogId } : undefined}
             onPick={(c) => {
               setCampaign(c);
               // Existing campaign with a campaign budget keeps it; otherwise the ad set needs its own.
@@ -167,7 +183,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
             Duplicating “{source.name}” (currently in <span className="strong">{source.campaign?.name}</span>) — its settings are pre-filled below, still fully editable.
             {' '}{adsCount === 1 ? 'Its 1 ad' : `Its ${adsCount} ads`} will be duplicated into the new ad set too, using the same creative.
           </p>
-          <div className="choices two" style={{ marginTop: 14 }}>
+          <div className="choices" style={{ marginTop: 14 }}>
             <button type="button" className="choice" onClick={() => setView({ kind: 'form', mode: 'DUP_NEW' })}>
               <Rocket size={22} strokeWidth={1.8} />
               <h3>New Campaign</h3>
@@ -180,6 +196,55 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
             </button>
           </div>
         </>
+      ) : view.kind === 'ad-first' ? (
+        <AdFirstBuilder account={account} form={form} setForm={setForm} onStartOver={startOver} onNext={() => { setView({ kind: 'ad-dest' }); window.scrollTo({ top: 0 }); }} />
+      ) : view.kind === 'ad-dest' ? (
+        <>
+          <button type="button" className="back" onClick={() => setView({ kind: 'ad-first' })}><ChevronLeft size={13} /> Back to ad</button>
+          <h2 className="section-title" style={{ marginTop: 0 }}>Where should your ad go?</h2>
+          <p className="note">
+            Your {form.campaign.catalogEnabled ? 'catalog ad' : 'ad'} is ready.
+            {form.campaign.catalogEnabled ? ' Catalog ads need a catalog ad set and campaign on the same catalog.' : ' Normal ads go into ad sets without a catalog.'}
+          </p>
+          <div className="choices three" style={{ marginTop: 14 }}>
+            <button type="button" className="choice" onClick={() => setView({ kind: 'pick-adset-for-ad' })}>
+              <Rocket size={22} strokeWidth={1.8} />
+              <h3>Existing Ad Set</h3>
+              <p>Add the ad to an ad set you already have.</p>
+            </button>
+            <button type="button" className="choice" onClick={() => setView({ kind: 'pick-campaign', next: 'EXISTING' })}>
+              <Rocket size={22} strokeWidth={1.8} />
+              <h3>New Ad Set → Existing Campaign</h3>
+              <p>Create a new ad set for it in a campaign you already have.</p>
+            </button>
+            <button type="button" className="choice" onClick={() => { setView({ kind: 'form', mode: 'NEW' }); window.scrollTo({ top: 0 }); }}>
+              <Rocket size={22} strokeWidth={1.8} />
+              <h3>New Campaign + Ad Set</h3>
+              <p>Create a new campaign and ad set for it.</p>
+            </button>
+          </div>
+        </>
+      ) : view.kind === 'pick-adset-for-ad' ? (
+        <>
+          <button type="button" className="back" onClick={() => setView({ kind: 'ad-dest' })}><ChevronLeft size={13} /> Back</button>
+          <AdsetPicker
+            account={account}
+            title="Pick the ad set for your ad"
+            createLabel="Create a new ad set instead"
+            adFit={{ isCatalog: form.campaign.catalogEnabled, catalogId: form.campaign.catalogId }}
+            onCreateNew={() => setView({ kind: 'ad-dest' })}
+            onPick={(a) => setAdTarget(a)}
+          />
+          {adTarget ? (
+            <AdOnlyReview
+              account={account}
+              form={form}
+              target={adTarget}
+              onClose={() => setAdTarget(undefined)}
+              onDone={(result) => { setAdTarget(undefined); setView({ kind: 'done', result, mode: 'AD_ONLY' }); window.scrollTo({ top: 0 }); }}
+            />
+          ) : null}
+        </>
       ) : view.kind === 'form' ? (
         <LaunchForm
           key={`${view.mode}-${campaign?.id || ''}-${source?.id || ''}`}
@@ -190,6 +255,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
           campaign={campaign}
           source={source}
           onStartOver={startOver}
+          onEditAd={() => { setView({ kind: 'ad-first' }); window.scrollTo({ top: 0 }); }}
           onDone={(result) => { setView({ kind: 'done', result, mode: view.mode }); window.scrollTo({ top: 0 }); }}
         />
       ) : view.kind === 'done' ? (
