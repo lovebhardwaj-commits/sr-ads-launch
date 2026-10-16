@@ -1,6 +1,13 @@
 import { attributionFromSpec, fromMinorUnits, goalFromOptimization, normalizeObjective } from './constants';
 import type { AdsetLite, CampaignLite, FlowContext, FormState, GeoItem, Mode } from './types';
 
+/** Default text for catalog ads; Meta fills the {{product.*}} tokens per product. Normal ads start empty. */
+export const CATALOG_AD_TEXT = {
+  message: 'Still thinking about it? {{product.name}} is waiting for you.',
+  headline: '{{product.name}}',
+  description: '{{product.current_price}}',
+};
+
 export const INDIA: GeoItem = { key: 'IN', name: 'India', type: 'country', country_code: 'IN' };
 
 export function defaultForm(catalog = false): FormState {
@@ -43,14 +50,23 @@ export function defaultForm(catalog = false): FormState {
       crossSellSourceSetId: '',
     },
     ad: {
+      kind: catalog ? 'CATALOG' : 'UPLOAD',
+      copyOriginal: true,
+      addNew: false,
+      imageHash: '',
+      imageUrl: '',
+      imageName: '',
+      postSource: 'FACEBOOK',
+      postId: '',
+      postPreview: '',
       name: '',
       pageId: '',
       instagramUserId: '',
       format: 'CAROUSEL',
       media: 'IMAGES',
-      message: 'Still thinking about it? {{product.name}} is waiting for you.',
-      headline: '{{product.name}}',
-      description: '{{product.current_price}}',
+      message: catalog ? CATALOG_AD_TEXT.message : '',
+      headline: catalog ? CATALOG_AD_TEXT.headline : '',
+      description: catalog ? CATALOG_AD_TEXT.description : '',
       cta: 'SHOP_NOW',
       link: '',
       endCard: true,
@@ -80,7 +96,10 @@ export function buildContext(mode: Mode, form: FormState, campaign?: CampaignLit
     adsetBudget,
     campaignHasBudget,
     showBudget: needsCampaign || adsetBudget,
-    needsAd: isCatalog && !isDup,
+    needsAd: isCatalog && (!isDup || form.ad.addNew),
+    needsStandardAd: !isCatalog && (form.ad.kind === 'UPLOAD' || form.ad.kind === 'POST') && (!isDup || form.ad.addNew),
+    copyAds: isDup && form.ad.copyOriginal,
+    isDup,
     catalogLocked: !needsCampaign || (isDup && sourceIsCatalog),
   };
 }
@@ -207,12 +226,22 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
   if (!(usesAudience && a.audienceType === 'SAVED') && !a.locations.length) m.push({ key: 'adset.locations', label: 'Location' });
   if (a.ageMin > a.ageMax) m.push({ key: 'adset.age', label: 'Min age below max age' });
   if (a.placement === 'MANUAL' && !a.platforms.length) m.push({ key: 'adset.platforms', label: 'At least one placement' });
+  const ad = form.ad;
   if (ctx.needsAd) {
-    const ad = form.ad;
     if (!ad.pageId) m.push({ key: 'ad.pageId', label: 'Facebook Page' });
     if (!ad.message.trim()) m.push({ key: 'ad.message', label: 'Primary text' });
     if (!ad.headline.trim()) m.push({ key: 'ad.headline', label: 'Headline' });
     if (!/^https?:\/\/\S+\.\S+/.test(ad.link.trim())) m.push({ key: 'ad.link', label: 'See more URL' });
   }
+  if (ctx.needsStandardAd) {
+    if (!ad.pageId) m.push({ key: 'ad.pageId', label: 'Facebook Page' });
+    if (ad.kind === 'UPLOAD') {
+      if (!ad.imageHash) m.push({ key: 'ad.imageHash', label: 'Image' });
+      if (!ad.message.trim()) m.push({ key: 'ad.message', label: 'Primary text' });
+      if (!/^https?:\/\/\S+\.\S+/.test(ad.link.trim())) m.push({ key: 'ad.link', label: 'Website URL' });
+    }
+    if (ad.kind === 'POST' && !ad.postId) m.push({ key: 'ad.postId', label: 'Post' });
+  }
+  if (ctx.isDup && !ad.copyOriginal && !ad.addNew) m.push({ key: 'ad.none', label: 'Copy the original ads or add a new ad' });
   return m;
 }
