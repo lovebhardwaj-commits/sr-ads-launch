@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import LegalLinks from '@/components/LegalLinks';
+import AppShell from '@/components/Sidebar';
 import { PERMISSIONS, getScopes, missingEnv } from '@/lib/config';
 import { getSession } from '@/lib/session';
 
@@ -20,10 +21,10 @@ export default async function LoginPage({ searchParams }: { searchParams: { erro
   const missing = searchParams.missing || configMissing.join(', ');
 
   return (
-    <main className="login">
+    <AppShell>
+    <div className="login-in-shell">
       <div className="login-card">
-        <div className="logo" aria-hidden>f</div>
-        <h1 className="page-title" style={{ fontSize: 20 }}>Launch</h1>
+        <h1 className="page-title" style={{ fontSize: 20 }}>Launch Ads</h1>
         <p className="page-sub" style={{ marginBottom: 24 }}>
           Launch campaigns, ad sets and catalog ads straight to Facebook, pre-filled for Indian D2C.
         </p>
@@ -62,6 +63,7 @@ export default async function LoginPage({ searchParams }: { searchParams: { erro
         </p>
         <LegalLinks style={{ marginTop: 6 }} />
       </div>
-    </main>
+    </div>
+    </AppShell>
   );
 }

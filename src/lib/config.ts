@@ -5,7 +5,7 @@
  * and sent to Facebook Login unless FACEBOOK_CONFIG_ID or FACEBOOK_SCOPES is set.
  */
 export const PERMISSIONS: { scope: string; why: string }[] = [
-  { scope: 'public_profile', why: 'Your name and photo in the sidebar' },
+  { scope: 'public_profile', why: 'Your name and photo in the app' },
   { scope: 'email', why: 'Identify your login' },
   { scope: 'ads_management', why: 'Create campaigns, ad sets, ads and copies' },
   { scope: 'ads_read', why: 'Read campaigns, ad sets and results' },
