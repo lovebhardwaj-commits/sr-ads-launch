@@ -15,10 +15,14 @@ function budgetText(c: { daily_budget?: string; lifetime_budget?: string }, curr
 
 const statusLabel = (s?: string) => (s || '').replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
-export function CampaignPicker({ account, title, source, onPick }: {
+/** Reverse journey: what the ad built first needs from its destination. */
+export interface AdFit { isCatalog: boolean; catalogId: string }
+
+export function CampaignPicker({ account, title, source, adFit, onPick }: {
   account: AdAccount;
   title: string;
   source?: AdsetLite;
+  adFit?: AdFit;
   onPick: (c: CampaignLite) => void;
 }) {
   const res = useAsync<CampaignLite[]>(`campaigns-${account.id}`, () => apiGet('campaigns', { account: account.id }));
@@ -38,9 +42,13 @@ export function CampaignPicker({ account, title, source, onPick }: {
         else if (sourceIsCatalog && catalog !== sourceCatalog) blocked = 'Needs the same catalog as the original';
         else if (!sourceIsCatalog && catalog) blocked = 'Catalog campaigns only take catalog ad sets';
       }
+      if (adFit) {
+        if (adFit.isCatalog && catalog !== adFit.catalogId) blocked = 'Needs a catalog campaign using your ad\u2019s catalog';
+        else if (!adFit.isCatalog && catalog) blocked = 'Catalog campaigns need a catalog ad';
+      }
       return { c, catalog, blocked };
     })
-    .sort((a, b) => Number(!!a.blocked) - Number(!!b.blocked)), [res.data, q, source, sourceCatalog, sourceObjective, sourceIsCatalog]);
+    .sort((a, b) => Number(!!a.blocked) - Number(!!b.blocked)), [res.data, q, source, sourceCatalog, sourceObjective, sourceIsCatalog, adFit]);
 
   return (
     <div>
@@ -64,27 +72,42 @@ export function CampaignPicker({ account, title, source, onPick }: {
   );
 }
 
-export function AdsetPicker({ account, onPick, onCreateNew }: { account: AdAccount; onPick: (a: AdsetLite) => void; onCreateNew: () => void }) {
+export function AdsetPicker({ account, onPick, onCreateNew, title = 'Pick the ad set to duplicate', createLabel = 'Create a new campaign + ad set', adFit }: {
+  account: AdAccount;
+  onPick: (a: AdsetLite) => void;
+  onCreateNew: () => void;
+  title?: string;
+  createLabel?: string;
+  adFit?: AdFit;
+}) {
   const [archived, setArchived] = useState(false);
   const res = useAsync<AdsetLite[]>(`adsets-${account.id}-${archived}`, () => apiGet('adsets', { account: account.id, archived: archived ? '1' : undefined }));
   const [q, setQ] = useState('');
-  const items = (res.data || []).filter((a) => !q || a.name.toLowerCase().includes(q.toLowerCase()) || (a.campaign?.name || '').toLowerCase().includes(q.toLowerCase()));
+  const blockedFor = (a: AdsetLite) => {
+    if (!adFit) return '';
+    const set = a.promoted_object?.product_set_id;
+    if (adFit.isCatalog) return set && a.campaign?.promoted_object?.product_catalog_id === adFit.catalogId ? '' : 'Needs a catalog ad set on your ad\u2019s catalog';
+    return set ? 'Catalog ad sets need a catalog ad' : '';
+  };
+  const items = (res.data || [])
+    .filter((a) => !q || a.name.toLowerCase().includes(q.toLowerCase()) || (a.campaign?.name || '').toLowerCase().includes(q.toLowerCase()))
+    .sort((x, y) => Number(!!blockedFor(x)) - Number(!!blockedFor(y)));
 
   return (
     <div>
-      <h2 className="section-title" style={{ marginTop: 0 }}>Pick the ad set to duplicate</h2>
+      <h2 className="section-title" style={{ marginTop: 0 }}>{title}</h2>
       <input className="input" placeholder="Search ad sets or campaigns…" value={q} onChange={(e) => setQ(e.target.value)} />
       {res.loading ? <Loading text="Loading ad sets…" /> : res.error ? <div className="notice bad" style={{ marginTop: 12 }}>{res.error}</div> : (
         <div className="list">
           {!items.length && q ? <div className="note">No ad sets match “{q}”.</div> : null}
           {!items.length && !q ? (
             <div className="card" style={{ textAlign: 'center', padding: '28px 20px' }}>
-              <div className="strong" style={{ fontSize: 14 }}>No ad sets to duplicate in this ad account</div>
+              <div className="strong" style={{ fontSize: 14 }}>No ad sets in this ad account</div>
               <p className="note" style={{ margin: '6px 0 16px' }}>
                 {archived ? 'There are no active, paused or archived ad sets here.' : 'There are no active or paused ad sets here.'} Create a new campaign and ad set instead{archived ? '' : ', or include archived ad sets'}.
               </p>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <button type="button" className="btn-primary" onClick={onCreateNew}>Create a new campaign + ad set</button>
+                <button type="button" className="btn-primary" onClick={onCreateNew}>{createLabel}</button>
                 {!archived ? <button type="button" className="btn-ghost" onClick={() => setArchived(true)}>Show archived ad sets</button> : null}
               </div>
             </div>
@@ -94,11 +117,12 @@ export function AdsetPicker({ account, onPick, onCreateNew }: { account: AdAccou
           ) : null}
           {items.map((a) => {
             const n = a.ads?.summary?.total_count ?? 0;
+            const blocked = blockedFor(a);
             return (
-              <button key={a.id} type="button" className="list-item" onClick={() => onPick(a)}>
+              <button key={a.id} type="button" className="list-item" disabled={!!blocked} title={blocked || undefined} onClick={() => onPick(a)}>
                 <div>
                   <div className="name">{a.name}</div>
-                  <div className="sub">{a.campaign?.name} · {n} {n === 1 ? 'ad' : 'ads'} · {statusLabel(a.effective_status || a.status)}</div>
+                  <div className="sub">{a.campaign?.name} · {n} {n === 1 ? 'ad' : 'ads'} · {statusLabel(a.effective_status || a.status)}{blocked ? ` · ${blocked}` : ''}</div>
                 </div>
                 {a.promoted_object?.product_set_id ? <span className="badge coral">Catalog</span> : <span className="badge grey">{objectiveLabel(a.campaign?.objective)}</span>}
               </button>
