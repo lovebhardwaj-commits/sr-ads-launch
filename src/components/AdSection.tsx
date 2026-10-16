@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '@/lib/client-api';
 import { CTAS, PRODUCT_TOKENS, URL_DYNAMIC_PARAMS, UTM_FIELDS, buildUrlTags } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
+import { CATALOG_AD_TEXT } from '@/lib/form';
 import type { FormState } from '@/lib/types';
 import { Field, Loading, SearchSelect, Segmented, Select, TextInput, Toggle } from './ui';
 
@@ -60,6 +61,12 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
 
   const page = pages.data?.find((p) => p.id === ad.pageId);
   const ig = page?.instagram_business_account;
+
+  // Catalog ads start from the template text if nothing has been written yet.
+  useEffect(() => {
+    if (!ad.message && !ad.headline && !ad.description) setAd({ ...CATALOG_AD_TEXT });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Use the Page's Instagram account by default; clear it if the Page changes.
   useEffect(() => {
