@@ -82,6 +82,17 @@ export interface FormState {
     crossSellSourceSetId: string;
   };
   ad: {
+    /** CATALOG = catalog template ad; UPLOAD = new ad from an uploaded image; POST = existing FB/IG post; NONE = no ad */
+    kind: 'CATALOG' | 'UPLOAD' | 'POST' | 'NONE';
+    /** Duplicates: copy the original ad set's ads, and/or add a new ad */
+    copyOriginal: boolean;
+    addNew: boolean;
+    imageHash: string;
+    imageUrl: string;
+    imageName: string;
+    postSource: 'FACEBOOK' | 'INSTAGRAM';
+    postId: string;
+    postPreview: string;
     name: string;
     pageId: string;
     instagramUserId: string;
@@ -113,8 +124,13 @@ export interface FlowContext {
   /** Existing campaign already has a campaign budget */
   campaignHasBudget: boolean;
   showBudget: boolean;
-  /** Catalog ad step (new catalog ad sets need a template ad; duplicates copy their ads) */
+  /** A catalog template ad will be created */
   needsAd: boolean;
+  /** A normal (non-catalog) ad will be created: uploaded image or existing post */
+  needsStandardAd: boolean;
+  /** Duplicate: copy the original ad set's ads */
+  copyAds: boolean;
+  isDup: boolean;
   /** Catalog choice is fixed (existing catalog campaign, or duplicating a catalog ad set) */
   catalogLocked: boolean;
 }

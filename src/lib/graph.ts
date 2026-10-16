@@ -14,6 +14,7 @@ function readable(params: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(params)) {
     if (SECRET_KEYS.includes(k) || v === undefined || v === null) continue;
+    if (k === 'bytes' && typeof v === 'string') { out[k] = `[image, ${Math.round((v.length * 3) / 4 / 1024)} KB]`; continue; }
     if (typeof v === 'string' && /^[[{]/.test(v)) {
       try { out[k] = JSON.parse(v); continue; } catch { /* keep string */ }
     }
@@ -28,7 +29,9 @@ function record(entry: Omit<GraphCall, 'id' | 'response' | 'truncated'>, json: u
   let response: unknown = json;
   let truncated = false;
   try {
-    const text = JSON.stringify(json);
+    // Page tokens come back in some responses; strip them before logging.
+    const text = JSON.stringify(json, (k, v) => (k === 'access_token' ? '[hidden]' : v));
+    response = JSON.parse(text);
     if (text && text.length > MAX_RESPONSE_CHARS) { response = `${text.slice(0, MAX_RESPONSE_CHARS)}…`; truncated = true; }
   } catch { response = String(json); }
   log.push({ id: randomUUID(), ...entry, response, truncated });
