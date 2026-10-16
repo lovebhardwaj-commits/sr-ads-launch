@@ -8,6 +8,7 @@ import { useAsync } from '@/lib/hooks';
 import type { AdAccount, AdsetLite, CampaignLite, FormState, LaunchResult, Mode } from '@/lib/types';
 import LaunchForm from './LaunchForm';
 import { AdsetPicker, CampaignPicker } from './Pickers';
+import LegalLinks from './LegalLinks';
 import ResultView from './ResultView';
 import { Loading, SearchSelect } from './ui';
 
@@ -193,6 +194,8 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
       ) : view.kind === 'done' ? (
         <ResultView result={view.result} account={account} onAgain={startOver} />
       ) : null}
+
+      <LegalLinks style={{ marginTop: 48 }} />
 
       <button type="button" className="fab" aria-label="Launch options" onClick={() => setFabOpen(!fabOpen)}>
         <List size={20} strokeWidth={1.8} />

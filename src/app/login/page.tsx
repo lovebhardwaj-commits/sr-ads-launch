@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import LegalLinks from '@/components/LegalLinks';
 import { PERMISSIONS, getScopes, missingEnv } from '@/lib/config';
 import { getSession } from '@/lib/session';
 
@@ -55,6 +56,11 @@ export default async function LoginPage({ searchParams }: { searchParams: { erro
             </ul>
           ) : null}
         </div>
+
+        <p className="hint" style={{ marginTop: 16 }}>
+          By continuing, you agree to Shiprocket&apos;s Terms &amp; Conditions and Privacy Policy.
+        </p>
+        <LegalLinks style={{ marginTop: 6 }} />
       </div>
     </main>
   );
