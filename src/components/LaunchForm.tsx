@@ -20,7 +20,7 @@ export interface ProductSet { id: string; name: string; product_count?: number }
 
 const RETARGET_DAYS = [3, 7, 14, 30, 60, 90, 180].map((d) => ({ key: String(d), label: `${d} days` }));
 
-export default function LaunchForm({ mode, account, form, setForm, campaign, source, onStartOver, onDone }: {
+export default function LaunchForm({ mode, account, form, setForm, campaign, source, onStartOver, onEditAd, onDone }: {
   mode: Mode;
   account: AdAccount;
   form: FormState;
@@ -28,6 +28,8 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
   campaign?: CampaignLite;
   source?: AdsetLite;
   onStartOver: () => void;
+  /** Reverse journey: go back to the ad built first */
+  onEditAd?: () => void;
   onDone: (r: LaunchResult) => void;
 }) {
   const ctx = buildContext(mode, form, campaign, source);
@@ -161,16 +163,16 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             <Field label="Campaign objective" hint={mode === 'DUP_NEW' ? 'Matches the original ad set so its ads can be copied.' : undefined}>
               <Select
                 value={c.objective}
-                disabled={mode === 'DUP_NEW'}
+                disabled={mode === 'DUP_NEW' || (form.ad.adFirst && c.catalogEnabled)}
                 onChange={(v) => up('campaign', { objective: v, catalogEnabled: v === 'OUTCOME_SALES' ? c.catalogEnabled : false })}
                 options={OBJECTIVES}
               />
             </Field>
             {c.objective === 'OUTCOME_SALES' ? (
-              <Field hint={mode !== 'NEW' ? 'Set by the ad set being duplicated.' : c.catalogEnabled ? 'Ads pick products from your catalog for each shopper.' : 'Turn on to show products from your catalog instead of uploaded creatives.'}>
+              <Field hint={form.ad.adFirst ? 'Set by your ad.' : mode !== 'NEW' ? 'Set by the ad set being duplicated.' : c.catalogEnabled ? 'Ads pick products from your catalog for each shopper.' : 'Turn on to show products from your catalog instead of uploaded creatives.'}>
                 <Toggle
                   checked={c.catalogEnabled}
-                  onChange={(v) => { if (mode === 'NEW') up('campaign', { catalogEnabled: v }); }}
+                  onChange={(v) => { if (mode === 'NEW' && !form.ad.adFirst) up('campaign', { catalogEnabled: v }); }}
                   label={<span className="strong">Catalog</span>}
                 />
               </Field>
@@ -426,7 +428,23 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
 
       {/* ── Ad ── */}
       <h2 className="section-title">Ad</h2>
-      {ctx.isDup ? (
+      {form.ad.adFirst ? (
+        <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+            {form.ad.imageUrl || form.ad.postPreview ? <img src={form.ad.imageUrl || form.ad.postPreview} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 8 }} /> : null}
+            <div style={{ minWidth: 0 }}>
+              <div className="strong">{form.ad.name || 'Your ad'}</div>
+              <div className="hint" style={{ marginTop: 2 }}>
+                {ctx.isCatalog
+                  ? `Catalog ad · ${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} · products from the product set above`
+                  : form.ad.kind === 'POST' ? `Existing ${form.ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post` : `Image ad${form.ad.imageName ? ` · ${form.ad.imageName}` : ''}`}
+              </div>
+            </div>
+          </div>
+          {onEditAd ? <button type="button" className="btn-ghost" onClick={onEditAd}>Edit ad</button> : null}
+        </div>
+      ) : null}
+      {!form.ad.adFirst && ctx.isDup ? (
         <div className="card" style={{ marginBottom: 14 }}>
           <Field>
             <Toggle
@@ -440,7 +458,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
           </Field>
         </div>
       ) : null}
-      {!ctx.isDup || form.ad.addNew ? (
+      {!form.ad.adFirst && (!ctx.isDup || form.ad.addNew) ? (
         <>
           {!ctx.needsCampaign && !ctx.isDup ? (
             <p className="note">
