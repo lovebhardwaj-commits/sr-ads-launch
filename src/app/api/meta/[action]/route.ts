@@ -38,7 +38,7 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
     case 'adsets':
       return graph.list(`${act(q.get('account'))}/adsets`, token, {
         fields: 'id,name,status,effective_status,campaign{id,name,objective,daily_budget,lifetime_budget,promoted_object},optimization_goal,billing_event,destination_type,promoted_object,targeting,attribution_spec,daily_budget,lifetime_budget,bid_strategy,bid_amount,ads.limit(0).summary(true)',
-        filtering: [{ field: 'effective_status', operator: 'IN', value: LIVE }],
+        filtering: [{ field: 'effective_status', operator: 'IN', value: q.get('archived') ? [...LIVE, 'ARCHIVED'] : LIVE }],
         limit: 100,
       });
 
@@ -102,6 +102,20 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
       return res.data;
     }
 
+    case 'posts': {
+      // Recent posts to promote as an existing-post ad.
+      const page = need(q.get('page'), 'page');
+      if (q.get('source') === 'INSTAGRAM') {
+        const ig = need(q.get('ig'), 'Instagram account');
+        const res = await graph.get<{ data: any[] }>(`${ig}/media`, token, { fields: 'id,caption,media_type,media_url,thumbnail_url,timestamp,permalink', limit: 24 });
+        return res.data.map((m) => ({ id: m.id, text: m.caption || '', image: m.thumbnail_url || m.media_url || '', type: m.media_type, time: m.timestamp, link: m.permalink }));
+      }
+      // Page posts need the Page's own token, read server-side and never sent to the browser.
+      const pg = await graph.get<{ access_token?: string }>(page, token, { fields: 'access_token' });
+      const res = await graph.get<{ data: any[] }>(`${page}/published_posts`, pg.access_token || token, { fields: 'id,message,full_picture,created_time,permalink_url', limit: 24 });
+      return res.data.map((p) => ({ id: p.id, text: p.message || '', image: p.full_picture || '', type: 'POST', time: p.created_time, link: p.permalink_url }));
+    }
+
     case 'me':
       return graph.get('me', token, { fields: 'id,name' });
   }
@@ -114,6 +128,15 @@ async function handlePost(action: string, body: any, token: string): Promise<any
       return graph.post(`${need(body.catalog, 'catalog')}/external_event_sources`, token, {
         external_event_sources: [need(body.pixel, 'pixel')],
       });
+    case 'upload-image': {
+      // Image for a new ad: stored in the ad account's image library, referenced by hash.
+      const bytes = need(body.bytes, 'image');
+      if (bytes.length > 4_200_000) throw new GraphError({ message: 'Image is too large. Use an image under 3 MB.' });
+      const res = await graph.post<{ images: Record<string, { hash: string; url: string }> }>(`${act(body.account)}/adimages`, token, { bytes, name: body.name || 'image' });
+      const first = Object.values(res.images || {})[0];
+      if (!first) throw new GraphError({ message: 'Facebook did not return an image hash.' });
+      return { hash: first.hash, url: first.url };
+    }
     case 'launch':
       return launch(body as LaunchRequest, token);
   }

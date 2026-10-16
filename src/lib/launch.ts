@@ -163,6 +163,36 @@ export function creativeParams(form: FormState) {
   };
 }
 
+/** Normal (non-catalog) ad creative: uploaded image, or an existing Facebook / Instagram post. */
+export function standardCreativeParams(form: FormState) {
+  const ad = form.ad;
+  const urlTags = buildUrlTags(ad.urlTags || {});
+  const name = `${ad.name.trim() || form.adset.name.trim()} - Creative`;
+  if (ad.kind === 'POST' && ad.postSource === 'FACEBOOK') {
+    return { name, object_story_id: ad.postId, ...(urlTags ? { url_tags: urlTags } : {}) };
+  }
+  if (ad.kind === 'POST') {
+    return {
+      name,
+      object_id: ad.pageId,
+      instagram_user_id: ad.instagramUserId,
+      source_instagram_media_id: ad.postId,
+      ...(urlTags ? { url_tags: urlTags } : {}),
+    };
+  }
+  const link: any = {
+    image_hash: ad.imageHash,
+    link: ad.link.trim(),
+    message: ad.message,
+    call_to_action: { type: ad.cta, value: { link: ad.link.trim() } },
+  };
+  if (ad.headline.trim()) link.name = ad.headline;
+  if (ad.description.trim()) link.description = ad.description;
+  const story: any = { page_id: ad.pageId, link_data: link };
+  if (ad.instagramUserId) story.instagram_user_id = ad.instagramUserId;
+  return { name, object_story_spec: story, ...(urlTags ? { url_tags: urlTags } : {}) };
+}
+
 export async function launch(req: LaunchRequest, token: string): Promise<LaunchResult> {
   const { accountId, currency, mode, form } = req;
   const act = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
@@ -192,13 +222,13 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
     const adset = await graph.post<{ id: string }>(`${act}/adsets`, token, adsetParams(form, ctx, currency, campaignId, targeting));
     result.created.adset = { id: adset.id, name: form.adset.name.trim() };
 
-    // 3a. Catalog template ad
-    if (ctx.needsAd) {
+    // 3a. New ad: catalog template, or a normal ad from an uploaded image / existing post
+    if (ctx.needsAd || ctx.needsStandardAd) {
       step = 'creative';
-      const creative = await graph.post<{ id: string }>(`${act}/adcreatives`, token, creativeParams(form));
+      const creative = await graph.post<{ id: string }>(`${act}/adcreatives`, token, ctx.needsAd ? creativeParams(form) : standardCreativeParams(form));
       result.created.creative = { id: creative.id };
       step = 'ad';
-      const adName = form.ad.name.trim() || `${form.adset.name.trim()} - Catalog ad`;
+      const adName = form.ad.name.trim() || `${form.adset.name.trim()} - ${ctx.needsAd ? 'Catalog ad' : 'Ad'}`;
       const ad = await graph.post<{ id: string }>(`${act}/ads`, token, {
         name: adName,
         adset_id: adset.id,
@@ -209,7 +239,7 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
     }
 
     // 3b. Duplicate: copy every ad of the source ad set into the new one
-    if ((mode === 'DUP_NEW' || mode === 'DUP_EXISTING') && req.sourceAdset) {
+    if (ctx.copyAds && req.sourceAdset) {
       step = 'copy ads';
       const ads = await graph.list<{ id: string; name: string }>(`${req.sourceAdset.id}/ads`, token, { fields: 'id,name', limit: 100 });
       for (const ad of ads) {
