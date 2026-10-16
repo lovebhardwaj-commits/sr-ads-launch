@@ -200,6 +200,36 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
   const result: LaunchResult = { ok: false, created: { ads: [] }, activated: false };
   let step = 'campaign';
 
+  // Reverse journey: add the ad built first to an existing ad set.
+  if (mode === 'AD_ONLY') {
+    try {
+      const target = req.targetAdset;
+      if (!target) throw new GraphError({ message: 'No ad set selected.' });
+      const targetSet = target.promoted_object?.product_set_id;
+      step = 'creative';
+      const params = targetSet
+        ? creativeParams({ ...form, adset: { ...form.adset, productSetId: targetSet } })
+        : standardCreativeParams(form);
+      const creative = await graph.post<{ id: string }>(`${act}/adcreatives`, token, params);
+      result.created.creative = { id: creative.id };
+      step = 'ad';
+      const adName = form.ad.name.trim() || `${target.name} - ${targetSet ? 'Catalog ad' : 'Ad'}`;
+      const ad = await graph.post<{ id: string }>(`${act}/ads`, token, { name: adName, adset_id: target.id, creative: { creative_id: creative.id }, status: 'PAUSED' });
+      result.created.ads.push({ id: ad.id, name: adName });
+      result.created.adset = { id: target.id, name: target.name };
+      if (req.status === 'ACTIVE') {
+        step = 'activate';
+        await graph.post(ad.id, token, { status: 'ACTIVE' });
+        result.activated = true;
+      }
+      result.ok = true;
+    } catch (e) {
+      result.step = step;
+      result.error = e instanceof GraphError ? e.meta : { message: (e as Error).message };
+    }
+    return result;
+  }
+
   try {
     // 1. Campaign (always created paused; activated at the end so nothing spends on a half-built launch)
     let campaignId = req.existingCampaign?.id || '';
