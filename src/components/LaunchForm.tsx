@@ -224,6 +224,9 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             onProductSet={(id) => up('adset', { productSetId: id })}
             pixelId={a.pixelId}
             onReady={setCatalogReady}
+            pixels={pixels.data || []}
+            pixelsLoading={pixels.loading}
+            onPixel={(id) => up('adset', { pixelId: id })}
           />
         </>
       ) : null}
@@ -245,8 +248,12 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
         <Field label="Performance goal">
           <Select value={goal.key} onChange={(v) => up('adset', { goal: v })} options={goals} />
         </Field>
-        {goal.pixel || ctx.isCatalog ? (
-          <Field label="Dataset" hint={ctx.isCatalog ? 'Must be linked to the catalog; the Catalog card checks this.' : undefined}>
+        {ctx.isCatalog ? (
+          <Field label="Dataset" hint="Chosen in the Catalog card, where its link to the catalog is checked.">
+            <TextInput readOnly value={(() => { const px = pixels.data?.find((p) => p.id === a.pixelId); return px ? `${px.name} (${px.id})` : 'Select it in the Catalog card'; })()} aria-label="Dataset" />
+          </Field>
+        ) : goal.pixel ? (
+          <Field label="Dataset">
             {pixels.loading ? <Loading text="Loading datasets…" /> : pixels.error ? <div className="notice bad">{pixels.error}</div> : (
               <Select value={a.pixelId} onChange={(v) => up('adset', { pixelId: v })} placeholder="Select a dataset..." options={(pixels.data || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
             )}
