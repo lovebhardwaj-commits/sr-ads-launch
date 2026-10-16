@@ -151,6 +151,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
           <button type="button" className="back" onClick={startOver}><ChevronLeft size={13} /> Start over</button>
           <AdsetPicker
             account={account}
+            onCreateNew={() => choose('new')}
             onPick={(a) => {
               setSource(a);
               setForm(formFromAdset(a, account.currency));
