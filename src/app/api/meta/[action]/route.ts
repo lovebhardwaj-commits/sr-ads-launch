@@ -52,22 +52,49 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
       return graph.list('me/accounts', token, { fields: 'id,name,website,link,instagram_business_account{id,username}', limit: 100 });
 
     case 'catalogs': {
-      const account = await graph.get<{ business?: { id: string } }>(act(q.get('account')), token, { fields: 'business' });
+      // Meta has no ad-account catalog edge: catalogs belong to a business. Scope them to this ad account by
+      // (1) catalogs its campaigns already use, (2) catalogs linked to its datasets, then (3) the rest of its business.
+      const actId = act(q.get('account'));
       const fields = 'id,name,product_count,vertical';
-      const businesses: string[] = [];
-      if (account.business?.id) businesses.push(account.business.id);
-      else {
-        const mine = await graph.list<{ id: string }>('me/businesses', token, { fields: 'id', limit: 50 });
-        businesses.push(...mine.map((b) => b.id));
-      }
+      const [account, campaigns, pixels] = await Promise.all([
+        graph.get<{ business?: { id: string; name?: string } }>(actId, token, { fields: 'business{id,name}' }),
+        safe(() => graph.list<any>(`${actId}/campaigns`, token, {
+          fields: 'promoted_object',
+          filtering: [{ field: 'effective_status', operator: 'IN', value: [...LIVE, 'ARCHIVED'] }],
+          limit: 200,
+        }, 3)),
+        safe(() => graph.list<{ id: string }>(`${actId}/adspixels`, token, { fields: 'id', limit: 100 })),
+      ]);
+      const used = new Set<string>(Array.isArray(campaigns) ? campaigns.map((c) => c.promoted_object?.product_catalog_id).filter(Boolean) : []);
+      const pixelIds = new Set<string>(Array.isArray(pixels) ? pixels.map((p) => p.id) : []);
+
       const seen = new Map<string, any>();
-      for (const biz of businesses) {
+      const biz = account.business;
+      if (biz?.id) {
         for (const edge of ['owned_product_catalogs', 'client_product_catalogs']) {
-          const list = await safe(() => graph.list<any>(`${biz}/${edge}`, token, { fields, limit: 100 }));
-          if (Array.isArray(list)) list.forEach((c) => seen.set(c.id, c));
+          const list = await safe(() => graph.list<any>(`${biz.id}/${edge}`, token, { fields, limit: 100 }));
+          if (Array.isArray(list)) list.forEach((c) => seen.set(c.id, { ...c, business: biz.name, shared: edge === 'client_product_catalogs' }));
         }
       }
-      return Array.from(seen.values());
+      // Catalogs this account uses but the business listing didn't return (e.g. shared from elsewhere).
+      for (const id of Array.from(used)) {
+        if (seen.has(id)) continue;
+        const c = await safe(() => graph.get<any>(id, token, { fields }));
+        if (c && !('unavailable' in c)) seen.set(id, c);
+      }
+      // Linked to one of this account's datasets (checked for up to 40 catalogs, in parallel).
+      const all = Array.from(seen.values());
+      const linked = new Set<string>();
+      if (pixelIds.size) {
+        await Promise.all(all.slice(0, 40).map(async (c) => {
+          const src = await safe(() => graph.list<{ id: string }>(`${c.id}/external_event_sources`, token, { fields: 'id', limit: 50 }, 1));
+          if (Array.isArray(src) && src.some((s) => pixelIds.has(s.id))) linked.add(c.id);
+        }));
+      }
+      const rank = (c: any) => (used.has(c.id) ? 0 : linked.has(c.id) ? 1 : 2);
+      return all
+        .map((c) => ({ ...c, relevance: used.has(c.id) ? 'USED' : linked.has(c.id) ? 'LINKED' : 'BUSINESS' }))
+        .sort((x, y) => rank(x) - rank(y) || String(x.name).localeCompare(String(y.name)));
     }
 
     case 'product-sets':

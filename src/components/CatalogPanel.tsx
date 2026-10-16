@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, errorText } from '@/lib/client-api';
 import { useAsync } from '@/lib/hooks';
 import type { AdAccount } from '@/lib/types';
-import { Field, Loading, Select } from './ui';
+import { Field, Loading, SearchSelect, Select } from './ui';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-interface Catalog { id: string; name: string; product_count?: number; vertical?: string }
+interface Catalog { id: string; name: string; product_count?: number; vertical?: string; business?: string; shared?: boolean; relevance?: 'USED' | 'LINKED' | 'BUSINESS' }
+
+const RELEVANCE: Record<string, string> = { USED: 'Used in this ad account', LINKED: 'Linked to this ad account\u2019s dataset' };
 type State = 'pass' | 'warn' | 'fail' | 'info';
 interface Row { state: State; title: string; detail?: string; action?: 'link' }
 
@@ -30,7 +32,7 @@ export function readHealth(h: any, pixelId: string): { rows: Row[]; ready: boole
 
   // Pixel link
   if (!pixelId) {
-    rows.push({ state: 'fail', title: 'Pick the pixel in the Ad Set card', detail: 'Catalog ads use its ViewContent, AddToCart and Purchase events to choose products.' });
+    rows.push({ state: 'fail', title: 'Pick the dataset above', detail: 'Catalog ads use its ViewContent, AddToCart and Purchase events to choose products.' });
     ready = false;
   } else if (isUnavailable(h.sources)) {
     rows.push({ state: 'warn', title: "Couldn't confirm the pixel is linked to this catalog", detail: h.sources.unavailable });
@@ -101,7 +103,7 @@ const ICON: Record<State, JSX.Element> = {
   info: <Info size={16} />,
 };
 
-export default function CatalogPanel({ account, catalogId, locked, onCatalog, productSets, productSetsLoading, productSetsError, productSetId, onProductSet, pixelId, onReady, showHealth = true }: {
+export default function CatalogPanel({ account, catalogId, locked, onCatalog, productSets, productSetsLoading, productSetsError, productSetId, onProductSet, pixelId, onReady, showHealth = true, pixels, pixelsLoading, onPixel }: {
   account: AdAccount;
   catalogId: string;
   locked: boolean;
@@ -114,14 +116,19 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
   /** Chosen in the Ad Set card; used for the pixel checks here. */
   pixelId: string;
   onReady: (ready: boolean) => void;
-  /** Hide readiness checks (reverse journey: the dataset is chosen later) */
+  /** Hide readiness checks and the dataset (reverse journey: the dataset is chosen later) */
   showHealth?: boolean;
+  /** Dataset picker, shown in this card for catalog campaigns */
+  pixels?: { id: string; name: string }[];
+  pixelsLoading?: boolean;
+  onPixel?: (id: string) => void;
 }) {
   const catalogs = useAsync<Catalog[]>(`catalogs-${account.id}`, () => apiGet('catalogs', { account: account.id }));
   const health = useAsync<any>(catalogId && showHealth ? `health-${catalogId}-${pixelId}` : null, () => apiGet('health', { catalog: catalogId, pixel: pixelId }));
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState('');
   const [q, setQ] = useState('');
+  const [showAll, setShowAll] = useState(false);
 
   const result = useMemo(() => (health.data ? readHealth(health.data, pixelId) : null), [health.data, pixelId]);
   useEffect(() => { onReady(!!result?.ready); }, [result, onReady]);
@@ -140,6 +147,11 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
   };
 
   const current = catalogs.data?.find((c) => c.id === catalogId);
+  // Show catalogs this ad account uses or is linked to; the rest of the business on request.
+  const relevant = (catalogs.data || []).filter((c) => c.relevance && c.relevance !== 'BUSINESS');
+  const scoped = !showAll && relevant.length > 0;
+  const listed = scoped ? relevant.concat(current && !relevant.includes(current) ? [current] : []) : (catalogs.data || []);
+  const others = (catalogs.data || []).length - relevant.length;
   const sets = productSets.filter((s) => !q || s.name.toLowerCase().includes(q.toLowerCase()));
 
   return (
@@ -148,16 +160,40 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
         {catalogs.loading ? <Loading text="Loading catalogs…" /> : catalogs.error && !locked ? <div className="notice bad">{catalogs.error}</div> : locked ? (
           <input className="input" disabled value={current ? `${current.name} (${current.id})` : catalogId} />
         ) : catalogs.data && !catalogs.data.length ? (
-          <div className="notice warn">No catalogs found for this ad account&apos;s business. Create one in Commerce Manager, or connect your store through the Facebook &amp; Instagram app.</div>
+          <div className="notice warn">No catalogs found for this ad account. It isn&apos;t using one yet and its business has none. Create one in Commerce Manager, or connect your store through the Facebook &amp; Instagram app.</div>
         ) : (
-          <Select
-            value={catalogId}
-            onChange={onCatalog}
-            placeholder="Select a catalog..."
-            options={(catalogs.data || []).map((c) => ({ key: c.id, label: `${c.name}${c.product_count != null ? ` (${c.product_count.toLocaleString('en-IN')} products)` : ''}` }))}
-          />
+          <>
+            <SearchSelect
+              value={catalogId}
+              onChange={onCatalog}
+              ariaLabel="Catalog"
+              noun="catalogs"
+              placeholder="Select a catalog..."
+              searchPlaceholder="Search catalogs by name or ID"
+              options={listed.map((c) => ({
+                key: c.id,
+                label: c.name,
+                meta: [c.product_count != null ? `${c.product_count.toLocaleString('en-IN')} products` : '', RELEVANCE[c.relevance || ''] || (c.shared ? 'Shared with the business' : c.business ? `In ${c.business}` : ''), c.id].filter(Boolean).join(' · '),
+              }))}
+            />
+            {relevant.length && others > 0 ? (
+              <button type="button" className="btn-link" style={{ marginTop: 6 }} onClick={() => setShowAll(!showAll)}>
+                {scoped ? `Show all ${(catalogs.data || []).length} catalogs in the business` : 'Only show catalogs for this ad account'}
+              </button>
+            ) : !relevant.length && (catalogs.data || []).length ? (
+              <div className="hint">This ad account hasn&apos;t used a catalog yet and none is linked to its datasets, so all catalogs in its business are listed.</div>
+            ) : null}
+          </>
         )}
       </Field>
+
+      {showHealth && onPixel ? (
+        <Field label="Dataset" hint="The pixel that sends ViewContent, AddToCart and Purchase from your store. It must be linked to the catalog.">
+          {pixelsLoading ? <Loading text="Loading datasets…" /> : (
+            <Select value={pixelId} onChange={onPixel} placeholder="Select a dataset..." options={(pixels || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
+          )}
+        </Field>
+      ) : null}
 
       {catalogId ? (
         <Field label={`Product sets${productSets.length ? ` (${productSets.length})` : ''}`} hint="The products this ad set can show. Create or edit sets in Commerce Manager.">
