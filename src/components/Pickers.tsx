@@ -55,7 +55,7 @@ export function CampaignPicker({ account, title, source, onPick }: {
                 <div className="name">{c.name}</div>
                 <div className="sub">{objectiveLabel(c.objective)} · {budgetText(c, account.currency)} · {statusLabel(c.effective_status || c.status)}{blocked ? ` · ${blocked}` : ''}</div>
               </div>
-              {catalog ? <span className="badge coral">Catalog</span> : null}
+              {catalog ? <span className="badge coral">Catalog</span> : <span className="badge grey">Normal</span>}
             </button>
           ))}
         </div>
@@ -64,8 +64,9 @@ export function CampaignPicker({ account, title, source, onPick }: {
   );
 }
 
-export function AdsetPicker({ account, onPick }: { account: AdAccount; onPick: (a: AdsetLite) => void }) {
-  const res = useAsync<AdsetLite[]>(`adsets-${account.id}`, () => apiGet('adsets', { account: account.id }));
+export function AdsetPicker({ account, onPick, onCreateNew }: { account: AdAccount; onPick: (a: AdsetLite) => void; onCreateNew: () => void }) {
+  const [archived, setArchived] = useState(false);
+  const res = useAsync<AdsetLite[]>(`adsets-${account.id}-${archived}`, () => apiGet('adsets', { account: account.id, archived: archived ? '1' : undefined }));
   const [q, setQ] = useState('');
   const items = (res.data || []).filter((a) => !q || a.name.toLowerCase().includes(q.toLowerCase()) || (a.campaign?.name || '').toLowerCase().includes(q.toLowerCase()));
 
@@ -75,7 +76,22 @@ export function AdsetPicker({ account, onPick }: { account: AdAccount; onPick: (
       <input className="input" placeholder="Search ad sets or campaigns…" value={q} onChange={(e) => setQ(e.target.value)} />
       {res.loading ? <Loading text="Loading ad sets…" /> : res.error ? <div className="notice bad" style={{ marginTop: 12 }}>{res.error}</div> : (
         <div className="list">
-          {!items.length ? <div className="note">No active or paused ad sets{q ? ` match “${q}”` : ' in this ad account'}.</div> : null}
+          {!items.length && q ? <div className="note">No ad sets match “{q}”.</div> : null}
+          {!items.length && !q ? (
+            <div className="card" style={{ textAlign: 'center', padding: '28px 20px' }}>
+              <div className="strong" style={{ fontSize: 14 }}>No ad sets to duplicate in this ad account</div>
+              <p className="note" style={{ margin: '6px 0 16px' }}>
+                {archived ? 'There are no active, paused or archived ad sets here.' : 'There are no active or paused ad sets here.'} Create a new campaign and ad set instead{archived ? '' : ', or include archived ad sets'}.
+              </p>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button type="button" className="btn-primary" onClick={onCreateNew}>Create a new campaign + ad set</button>
+                {!archived ? <button type="button" className="btn-ghost" onClick={() => setArchived(true)}>Show archived ad sets</button> : null}
+              </div>
+            </div>
+          ) : null}
+          {items.length > 0 && !archived ? (
+            <button type="button" className="btn-link" style={{ alignSelf: 'flex-start' }} onClick={() => setArchived(true)}>Include archived ad sets</button>
+          ) : null}
           {items.map((a) => {
             const n = a.ads?.summary?.total_count ?? 0;
             return (
