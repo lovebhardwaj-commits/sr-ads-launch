@@ -101,7 +101,7 @@ const ICON: Record<State, JSX.Element> = {
   info: <Info size={16} />,
 };
 
-export default function CatalogPanel({ account, catalogId, locked, onCatalog, productSets, productSetsLoading, productSetsError, productSetId, onProductSet, pixelId, onReady }: {
+export default function CatalogPanel({ account, catalogId, locked, onCatalog, productSets, productSetsLoading, productSetsError, productSetId, onProductSet, pixelId, onReady, showHealth = true }: {
   account: AdAccount;
   catalogId: string;
   locked: boolean;
@@ -114,9 +114,11 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
   /** Chosen in the Ad Set card; used for the pixel checks here. */
   pixelId: string;
   onReady: (ready: boolean) => void;
+  /** Hide readiness checks (reverse journey: the dataset is chosen later) */
+  showHealth?: boolean;
 }) {
   const catalogs = useAsync<Catalog[]>(`catalogs-${account.id}`, () => apiGet('catalogs', { account: account.id }));
-  const health = useAsync<any>(catalogId ? `health-${catalogId}-${pixelId}` : null, () => apiGet('health', { catalog: catalogId, pixel: pixelId }));
+  const health = useAsync<any>(catalogId && showHealth ? `health-${catalogId}-${pixelId}` : null, () => apiGet('health', { catalog: catalogId, pixel: pixelId }));
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState('');
   const [q, setQ] = useState('');
@@ -181,7 +183,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
         </Field>
       ) : null}
 
-      {catalogId ? (
+      {catalogId && showHealth ? (
         <div className="health" aria-live="polite">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="label" style={{ margin: 0 }}>Catalog readiness</span>
