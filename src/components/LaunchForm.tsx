@@ -13,6 +13,7 @@ import AdSection from './AdSection';
 import BudgetField from './BudgetField';
 import CatalogPanel from './CatalogPanel';
 import ReviewModal from './ReviewModal';
+import StandardAdSection from './StandardAdSection';
 import { CheckPills, Field, Loading, Segmented, Select, TagSearch, TextInput, Toggle } from './ui';
 
 export interface ProductSet { id: string; name: string; product_count?: number }
@@ -423,11 +424,36 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
         ) : null}
       </div>
 
-      {/* ── Ad (catalog template) ── */}
-      {ctx.needsAd ? (
+      {/* ── Ad ── */}
+      <h2 className="section-title">Ad</h2>
+      {ctx.isDup ? (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <Field>
+            <Toggle
+              checked={form.ad.copyOriginal}
+              onChange={(v) => up('ad', { copyOriginal: v })}
+              label={<>Copy the original ad set&apos;s <span className="strong">{source?.ads?.summary?.total_count ?? 0} {(source?.ads?.summary?.total_count ?? 0) === 1 ? 'ad' : 'ads'}</span>, with the same creative</>}
+            />
+          </Field>
+          <Field>
+            <Toggle checked={form.ad.addNew} onChange={(v) => up('ad', { addNew: v })} label={ctx.isCatalog ? 'Also add a new catalog ad' : 'Also add a new ad'} />
+          </Field>
+        </div>
+      ) : null}
+      {!ctx.isDup || form.ad.addNew ? (
         <>
-          <h2 className="section-title">Ad</h2>
-          <AdSection form={form} setAd={(p) => up('ad', p)} productSetId={a.productSetId} catalogId={ctx.catalogId} />
+          {!ctx.needsCampaign && !ctx.isDup ? (
+            <p className="note">
+              {ctx.isCatalog
+                ? 'This campaign uses a catalog, so you\u2019ll create a catalog ad: Meta picks products from the product set for each shopper.'
+                : 'This is a normal campaign, so you\u2019ll create a normal ad: upload an image or use an existing post.'}
+            </p>
+          ) : null}
+          {ctx.isCatalog ? (
+            <AdSection form={form} setAd={(p) => up('ad', p)} productSetId={a.productSetId} catalogId={ctx.catalogId} />
+          ) : (
+            <StandardAdSection form={form} setAd={(p) => up('ad', p)} accountId={account.id} allowSkip={!ctx.isDup} />
+          )}
         </>
       ) : null}
 
