@@ -1,4 +1,5 @@
-export type Mode = 'NEW' | 'EXISTING' | 'DUP_NEW' | 'DUP_EXISTING';
+/** AD_ONLY = reverse journey: an ad built first, added to an existing ad set */
+export type Mode = 'NEW' | 'EXISTING' | 'DUP_NEW' | 'DUP_EXISTING' | 'AD_ONLY';
 
 export interface GeoItem { key: string; name: string; type: string; country_code?: string }
 export interface LocaleItem { key: number; name: string }
@@ -87,6 +88,8 @@ export interface FormState {
     /** Duplicates: copy the original ad set's ads, and/or add a new ad */
     copyOriginal: boolean;
     addNew: boolean;
+    /** Reverse journey: the ad was built before choosing where it goes */
+    adFirst: boolean;
     imageHash: string;
     imageUrl: string;
     imageName: string;
@@ -143,6 +146,8 @@ export interface LaunchRequest {
   form: FormState;
   existingCampaign?: CampaignLite;
   sourceAdset?: AdsetLite;
+  /** AD_ONLY: the existing ad set the ad is added to */
+  targetAdset?: AdsetLite;
 }
 
 export interface LaunchResult {

@@ -53,6 +53,7 @@ export function defaultForm(catalog = false): FormState {
       kind: catalog ? 'CATALOG' : 'UPLOAD',
       copyOriginal: true,
       addNew: false,
+      adFirst: false,
       imageHash: '',
       imageUrl: '',
       imageName: '',
@@ -100,7 +101,7 @@ export function buildContext(mode: Mode, form: FormState, campaign?: CampaignLit
     needsStandardAd: !isCatalog && (form.ad.kind === 'UPLOAD' || form.ad.kind === 'POST') && (!isDup || form.ad.addNew),
     copyAds: isDup && form.ad.copyOriginal,
     isDup,
-    catalogLocked: !needsCampaign || (isDup && sourceIsCatalog),
+    catalogLocked: !needsCampaign || (isDup && sourceIsCatalog) || form.ad.adFirst,
   };
 }
 
@@ -227,21 +228,32 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
   if (a.ageMin > a.ageMax) m.push({ key: 'adset.age', label: 'Min age below max age' });
   if (a.placement === 'MANUAL' && !a.platforms.length) m.push({ key: 'adset.platforms', label: 'At least one placement' });
   const ad = form.ad;
-  if (ctx.needsAd) {
+  if (ctx.needsAd) m.push(...validateAd(form, true));
+  if (ctx.needsStandardAd) m.push(...validateAd(form, false));
+  if (ctx.isDup && !ad.copyOriginal && !ad.addNew) m.push({ key: 'ad.none', label: 'Copy the original ads or add a new ad' });
+  return m;
+}
+
+/** What a catalog or normal ad still needs. `withCatalog` also checks catalog + product set (reverse journey). */
+export function validateAd(form: FormState, isCatalog: boolean, withCatalog = false): Missing[] {
+  const m: Missing[] = [];
+  const ad = form.ad;
+  const validUrl = /^https?:\/\/\S+\.\S+/.test(ad.link.trim());
+  if (isCatalog) {
+    if (withCatalog && !form.campaign.catalogId) m.push({ key: 'campaign.catalogId', label: 'Catalog' });
+    if (withCatalog && !form.adset.productSetId) m.push({ key: 'adset.productSetId', label: 'Product set' });
     if (!ad.pageId) m.push({ key: 'ad.pageId', label: 'Facebook Page' });
     if (!ad.message.trim()) m.push({ key: 'ad.message', label: 'Primary text' });
     if (!ad.headline.trim()) m.push({ key: 'ad.headline', label: 'Headline' });
-    if (!/^https?:\/\/\S+\.\S+/.test(ad.link.trim())) m.push({ key: 'ad.link', label: 'See more URL' });
+    if (!validUrl) m.push({ key: 'ad.link', label: 'See more URL' });
+    return m;
   }
-  if (ctx.needsStandardAd) {
-    if (!ad.pageId) m.push({ key: 'ad.pageId', label: 'Facebook Page' });
-    if (ad.kind === 'UPLOAD') {
-      if (!ad.imageHash) m.push({ key: 'ad.imageHash', label: 'Image' });
-      if (!ad.message.trim()) m.push({ key: 'ad.message', label: 'Primary text' });
-      if (!/^https?:\/\/\S+\.\S+/.test(ad.link.trim())) m.push({ key: 'ad.link', label: 'Website URL' });
-    }
-    if (ad.kind === 'POST' && !ad.postId) m.push({ key: 'ad.postId', label: 'Post' });
+  if (!ad.pageId) m.push({ key: 'ad.pageId', label: 'Facebook Page' });
+  if (ad.kind === 'UPLOAD') {
+    if (!ad.imageHash) m.push({ key: 'ad.imageHash', label: 'Image' });
+    if (!ad.message.trim()) m.push({ key: 'ad.message', label: 'Primary text' });
+    if (!validUrl) m.push({ key: 'ad.link', label: 'Website URL' });
   }
-  if (ctx.isDup && !ad.copyOriginal && !ad.addNew) m.push({ key: 'ad.none', label: 'Copy the original ads or add a new ad' });
+  if (ad.kind === 'POST' && !ad.postId) m.push({ key: 'ad.postId', label: 'Post' });
   return m;
 }
