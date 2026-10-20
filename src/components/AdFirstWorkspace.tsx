@@ -1,0 +1,372 @@
+'use client';
+import { ArrowLeft, ArrowRight, Check, ImageIcon, LayoutGrid, Newspaper } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { apiGet } from '@/lib/client-api';
+import { CATALOG_AD_TEXT, buildContext, defaultForm, validateAd } from '@/lib/form';
+import { currencySymbol, goalsFor, objectiveLabel } from '@/lib/constants';
+import { useAsync } from '@/lib/hooks';
+import type { AdAccount, FormState, LaunchResult, Mode } from '@/lib/types';
+import AdPreview from './AdPreview';
+import AdSection from './AdSection';
+import AdsetFacts from './AdsetFacts';
+import { AdOnlyPanel } from './AdOnlyReview';
+import CatalogPanel from './CatalogPanel';
+import DestinationTree, { adsetBudget, type Destination } from './DestinationTree';
+import LaunchForm, { type ProductSet } from './LaunchForm';
+import { adsetFit, budgetText } from './Pickers';
+import { ReviewPanel } from './ReviewModal';
+import StandardAdSection from './StandardAdSection';
+
+type Step = 'AD' | 'DEST' | 'SETTINGS' | 'REVIEW';
+type AdType = 'CATALOG' | 'UPLOAD' | 'POST';
+interface Missing { key: string; label: string }
+interface Draft { form: FormState; step: Step; dest: Destination | null; type: AdType | null; savedAt: number }
+
+const AD_TYPES: { key: AdType; title: string; text: string; icon: ReactNode }[] = [
+  { key: 'CATALOG', title: 'Catalog ad', text: 'Products from your catalog, picked for each shopper. Carousel or single.', icon: <LayoutGrid size={18} /> },
+  { key: 'UPLOAD', title: 'Image ad', text: 'One image with your own text, link and button.', icon: <ImageIcon size={18} /> },
+  { key: 'POST', title: 'Existing post', text: 'Promote a Facebook or Instagram post as it is.', icon: <Newspaper size={18} /> },
+];
+
+const draftKey = (account: AdAccount) => `sr-adfirst-draft-${account.id}`;
+
+/**
+ * "Start with an Ad" workspace: a step rail on the left, one step at a time in the middle, the live
+ * preview and destination summary on the right, and an action bar that says what's blocking.
+ */
+export default function AdFirstWorkspace({ account, form, setForm, onDone }: {
+  account: AdAccount;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  onDone: (r: LaunchResult, mode: Mode) => void;
+}) {
+  const [step, setStep] = useState<Step>('AD');
+  const [type, setType] = useState<AdType | null>(null);
+  const [dest, setDest] = useState<Destination | null>(null);
+  const [settingsMissing, setSettingsMissing] = useState<Missing[]>([{ key: 'settings', label: 'Ad set settings' }]);
+  const [restored, setRestored] = useState(false);
+  const loaded = useRef(false);
+  const mainRef = useRef<HTMLDivElement>(null);
+
+  // Restore a saved draft once; then save as things change.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(draftKey(account));
+      if (raw) {
+        const d = JSON.parse(raw) as Draft;
+        if (d?.form && (d.type || d.form.ad.name)) {
+          setForm({ ...defaultForm(), ...d.form, ad: { ...defaultForm().ad, ...d.form.ad, adFirst: true } });
+          setType(d.type); setDest(d.dest); setStep(d.step === 'REVIEW' ? 'DEST' : d.step || 'AD'); setRestored(true);
+        }
+      }
+    } catch { /* ignore broken drafts */ }
+    loaded.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account.id]);
+  useEffect(() => {
+    if (!loaded.current) return;
+    const t = setTimeout(() => {
+      try {
+        // Uploaded image data is too large to keep; the upload itself (hash) is kept.
+        const slim = { ...form, ad: { ...form.ad, imageUrl: '' } };
+        localStorage.setItem(draftKey(account), JSON.stringify({ form: slim, step, dest, type, savedAt: Date.now() } satisfies Draft));
+      } catch { /* storage full or unavailable */ }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [form, step, dest, type, account]);
+
+  const clearDraft = () => { try { localStorage.removeItem(draftKey(account)); } catch { /* ignore */ } };
+  const startFresh = () => {
+    clearDraft();
+    const f = defaultForm();
+    setForm({ ...f, ad: { ...f.ad, adFirst: true } });
+    setType(null); setDest(null); setStep('AD'); setRestored(false);
+  };
+
+  const isCatalog = form.ad.kind === 'CATALOG';
+  const fit = { isCatalog, catalogId: form.campaign.catalogId };
+  const adMissing = useMemo<Missing[]>(() => (type ? validateAd(form, isCatalog, true) : [{ key: 'ad.type', label: 'Ad type' }]), [form, isCatalog, type]);
+  const needsSettings = !!dest && dest.kind !== 'ADSET';
+  const destMissing: Missing[] = dest ? [] : [{ key: 'dest', label: 'Where the ad goes' }];
+
+  const reach: Record<Step, boolean> = {
+    AD: true,
+    DEST: !adMissing.length,
+    SETTINGS: !adMissing.length && needsSettings,
+    REVIEW: !adMissing.length && !!dest && (!needsSettings || !settingsMissing.length),
+  };
+  const blocking: Missing[] = step === 'AD' ? adMissing : step === 'DEST' ? destMissing : step === 'SETTINGS' ? settingsMissing : [];
+  const next: Step | null = step === 'AD' ? 'DEST' : step === 'DEST' ? (needsSettings ? 'SETTINGS' : 'REVIEW') : step === 'SETTINGS' ? 'REVIEW' : null;
+  const prev: Step | null = step === 'REVIEW' ? (needsSettings ? 'SETTINGS' : 'DEST') : step === 'SETTINGS' ? 'DEST' : step === 'DEST' ? 'AD' : null;
+  const go = (s: Step) => { setStep(s); mainRef.current?.scrollIntoView({ block: 'start' }); window.scrollTo({ top: 0 }); };
+
+  // Editing the ad can make the chosen ad set unsuitable; drop it.
+  useEffect(() => {
+    if (dest?.kind === 'ADSET' && adsetFit(dest.adset, fit)) setDest(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCatalog, form.campaign.catalogId]);
+
+  const chooseType = (t: AdType) => {
+    setType(t);
+    setForm((f) => {
+      const wasCatalog = f.ad.kind === 'CATALOG';
+      const toCatalog = t === 'CATALOG';
+      const text = toCatalog && !wasCatalog ? CATALOG_AD_TEXT : !toCatalog && wasCatalog ? { message: '', headline: '', description: '' } : {};
+      return {
+        ...f,
+        campaign: { ...f.campaign, catalogEnabled: toCatalog, objective: toCatalog ? 'OUTCOME_SALES' : f.campaign.objective },
+        ad: { ...f.ad, kind: t, ...text },
+      };
+    });
+  };
+
+  const chooseDest = (d: Destination) => {
+    setDest(d);
+    if (d.kind !== 'ADSET') setSettingsMissing([{ key: 'settings', label: 'Ad set settings' }]);
+    if (d.kind === 'NEW_ADSET') {
+      const c = d.campaign;
+      const level = c.daily_budget || c.lifetime_budget ? 'CAMPAIGN' : 'ADSET';
+      const goal = goalsFor(c.objective, !!c.promoted_object?.product_catalog_id)[0].key;
+      setForm((f) => ({ ...f, budget: { ...f.budget, level }, adset: { ...f.adset, goal } }));
+    }
+    if (d.kind === 'NEW_CAMPAIGN') {
+      setForm((f) => ({ ...f, campaign: { ...f.campaign, catalogEnabled: isCatalog, objective: isCatalog ? 'OUTCOME_SALES' : f.campaign.objective } }));
+    }
+  };
+
+  const productSets = useAsync<ProductSet[]>(isCatalog && form.campaign.catalogId ? `sets-${form.campaign.catalogId}` : null, () => apiGet('product-sets', { catalog: form.campaign.catalogId }));
+  const pixels = useAsync<{ id: string; name: string }[]>(`pixels-${account.id}`, () => apiGet('pixels', { account: account.id }));
+  useEffect(() => {
+    const sets = productSets.data;
+    if (sets?.length && form.adset.productSetId && !sets.some((s) => s.id === form.adset.productSetId)) setForm((f) => ({ ...f, adset: { ...f.adset, productSetId: '' } }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productSets.data]);
+
+  const setAd = (p: Partial<FormState['ad']>) => setForm((f) => ({ ...f, ad: { ...f.ad, ...p } }));
+  const mode: Mode = dest?.kind === 'NEW_CAMPAIGN' ? 'NEW' : dest?.kind === 'NEW_ADSET' ? 'EXISTING' : 'AD_ONLY';
+  const finish = (r: LaunchResult) => { clearDraft(); onDone(r, mode); };
+
+  const STEPS: { key: Step; title: string; sub: string }[] = [
+    { key: 'AD', title: 'Ad', sub: type ? `${AD_TYPES.find((t) => t.key === type)?.title}${form.ad.name ? ` · ${form.ad.name}` : ''}` : 'Type, creative and text' },
+    { key: 'DEST', title: 'Destination', sub: dest ? destLabel(dest) : 'Campaign and ad set' },
+    { key: 'SETTINGS', title: 'Settings', sub: !dest ? 'Only for a new ad set or campaign' : needsSettings ? (dest.kind === 'NEW_CAMPAIGN' ? 'Campaign and ad set' : 'Ad set') : 'Not needed: existing ad set' },
+    { key: 'REVIEW', title: 'Review', sub: 'Check and launch' },
+  ];
+  const doneOf = (s: Step) => (s === 'AD' ? !adMissing.length : s === 'DEST' ? !!dest : s === 'SETTINGS' ? needsSettings && !settingsMissing.length : false);
+
+  return (
+    <div className="ws">
+      {/* Step rail */}
+      <nav className="ws-rail" aria-label="Steps">
+        <ol>
+          {STEPS.map((s, i) => {
+            const skipped = s.key === 'SETTINGS' && !!dest && !needsSettings;
+            const state = step === s.key ? 'current' : skipped ? 'skipped' : doneOf(s.key) ? 'done' : reach[s.key] ? 'open' : 'locked';
+            return (
+              <li key={s.key}>
+                <button type="button" className={`ws-step ${state}`} disabled={!reach[s.key] || skipped} onClick={() => go(s.key)} aria-current={step === s.key ? 'step' : undefined}>
+                  <span className="no">{state === 'done' ? <Check size={12} strokeWidth={3} /> : i + 1}</span>
+                  <span className="txt"><span className="t">{s.title}</span><span className="s">{s.sub}</span></span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        {restored ? (
+          <div className="ws-draft">Draft restored. <button type="button" className="btn-link" onClick={startFresh}>Start fresh</button></div>
+        ) : null}
+      </nav>
+
+      {/* Current step */}
+      <div className="ws-main" ref={mainRef}>
+        {step === 'AD' ? (
+          <>
+            <StepHead title="Create your ad" sub="Pick the kind of ad, then add its creative and text. The preview on the right updates as you type." />
+            <div className="type-cards" role="radiogroup" aria-label="Ad type">
+              {AD_TYPES.map((t) => (
+                <button key={t.key} type="button" role="radio" aria-checked={type === t.key} className={`type-card ${type === t.key ? 'on' : ''}`} onClick={() => chooseType(t.key)}>
+                  <span className="ic">{t.icon}</span>
+                  <span className="tt">{t.title}</span>
+                  <span className="tx">{t.text}</span>
+                </button>
+              ))}
+            </div>
+            {type === 'CATALOG' ? (
+              <>
+                <SectionTitle>Products</SectionTitle>
+                <CatalogPanel
+                  account={account}
+                  catalogId={form.campaign.catalogId}
+                  locked={false}
+                  onCatalog={(id) => setForm((f) => ({ ...f, campaign: { ...f.campaign, catalogId: id }, adset: { ...f.adset, productSetId: '', crossSellSourceSetId: '' } }))}
+                  productSets={productSets.data || []}
+                  productSetsLoading={productSets.loading}
+                  productSetsError={productSets.error}
+                  productSetId={form.adset.productSetId}
+                  onProductSet={(id) => setForm((f) => ({ ...f, adset: { ...f.adset, productSetId: id } }))}
+                  pixelId=""
+                  onReady={() => undefined}
+                  showHealth={false}
+                />
+                <SectionTitle>Ad details</SectionTitle>
+                <AdSection form={form} setAd={setAd} productSetId={form.adset.productSetId} preview={false} />
+              </>
+            ) : type ? (
+              <>
+                <SectionTitle>Ad details</SectionTitle>
+                <StandardAdSection key={type} form={form} setAd={setAd} accountId={account.id} allowSkip={false} preview={false} hideSetup />
+              </>
+            ) : null}
+          </>
+        ) : step === 'DEST' ? (
+          <>
+            <StepHead title="Where should it run?" sub={isCatalog ? 'Pick an ad set, or create one. Catalog ads fit catalog campaigns on the same catalog, and Sales campaigns without a catalog.' : 'Pick an ad set, or create one. This ad fits campaigns without a catalog.'} />
+            <DestinationTree account={account} fit={fit} value={dest} onChange={chooseDest} />
+            {dest?.kind === 'ADSET' ? (
+              <>
+                <SectionTitle>This ad set</SectionTitle>
+                <div className="card"><AdsetFacts adset={dest.adset} account={account} /><p className="hint" style={{ marginBottom: 0 }}>Your ad joins this ad set as it is: its budget, audience and schedule don&apos;t change.</p></div>
+              </>
+            ) : null}
+          </>
+        ) : step === 'SETTINGS' && dest && dest.kind !== 'ADSET' ? (
+          <>
+            <StepHead
+              title={dest.kind === 'NEW_CAMPAIGN' ? 'Set up the campaign and ad set' : `Set up the ad set in ${dest.campaign.name}`}
+              sub="Budget, audience and schedule for your ad. Everything else uses Meta's recommended defaults."
+            />
+            <LaunchForm
+              key={dest.kind === 'NEW_ADSET' ? `ws-adset-${dest.campaign.id}` : 'ws-campaign'}
+              embedded
+              mode={dest.kind === 'NEW_CAMPAIGN' ? 'NEW' : 'EXISTING'}
+              account={account}
+              form={form}
+              setForm={setForm}
+              campaign={dest.kind === 'NEW_ADSET' ? dest.campaign : undefined}
+              onStartOver={startFresh}
+              onDone={finish}
+              onMissing={setSettingsMissing}
+            />
+          </>
+        ) : step === 'REVIEW' && dest ? (
+          <>
+            <StepHead title="Review and launch" sub="This is what will be created in Meta. Everything starts paused unless you choose otherwise." />
+            <StructureMap account={account} form={form} dest={dest} />
+            <div className="card" style={{ marginTop: 14 }}>
+              {dest.kind === 'ADSET' ? (
+                <AdOnlyPanel account={account} form={form} target={dest.adset} onClose={() => go('DEST')} onDone={finish} backLabel="Back to destination" title={false} />
+              ) : (
+                <ReviewPanel
+                  mode={mode}
+                  account={account}
+                  form={form}
+                  ctx={buildContext(mode, form, dest.kind === 'NEW_ADSET' ? dest.campaign : undefined)}
+                  campaign={dest.kind === 'NEW_ADSET' ? dest.campaign : undefined}
+                  productSets={productSets.data || []}
+                  pixels={pixels.data || []}
+                  onClose={() => go('SETTINGS')}
+                  onDone={finish}
+                  backLabel="Back to settings"
+                  title={false}
+                />
+              )}
+            </div>
+          </>
+        ) : null}
+
+        {/* Action bar */}
+        {step !== 'REVIEW' ? (
+          <div className="sticky-bar ws-foot">
+            {prev ? <button type="button" className="btn-ghost" onClick={() => go(prev)}><ArrowLeft size={14} /> Back</button> : <span />}
+            <span className="sticky-text">
+              {blocking.length ? <>Still needed: {blocking.map((m) => <span key={m.key} className="need">{m.label}</span>)}</> : <span className="ready">Ready to continue</span>}
+            </span>
+            {next ? (
+              <button type="button" className="btn-primary" disabled={blocking.length > 0} onClick={() => go(next)}>
+                {next === 'DEST' ? 'Choose destination' : next === 'SETTINGS' ? 'Set up' : 'Review'} <ArrowRight size={14} />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Live preview and destination summary */}
+      <aside className="ws-side" aria-label="Preview">
+        {type ? <AdPreview form={form} /> : <div className="preview"><div className="preview-empty">Pick an ad type to see a preview.</div></div>}
+        {dest ? (
+          <div className="card ws-dest">
+            <div className="label" style={{ marginBottom: 4 }}>Runs in</div>
+            {dest.kind === 'ADSET' ? (
+              <>
+                <div className="strong">{dest.adset.name}</div>
+                <div className="hint" style={{ marginTop: 2 }}>{dest.adset.campaign?.name} · {dest.adset.daily_budget || dest.adset.lifetime_budget ? adsetBudget(dest.adset, account.currency) : dest.adset.campaign ? `${budgetText(dest.adset.campaign, account.currency)} campaign budget` : 'Campaign budget'}</div>
+              </>
+            ) : (
+              <>
+                <div className="strong">{dest.kind === 'NEW_CAMPAIGN' ? form.campaign.name || 'New campaign' : form.adset.name || 'New ad set'}</div>
+                <div className="hint" style={{ marginTop: 2 }}>{dest.kind === 'NEW_ADSET' ? `New ad set in ${dest.campaign.name}` : 'New campaign and ad set'}{form.budget.amount ? ` · ${currencySymbol(account.currency)}${Number(form.budget.amount).toLocaleString('en-IN')}${form.budget.type === 'DAILY' ? '/day' : ' lifetime'}` : ''}</div>
+              </>
+            )}
+            {step !== 'DEST' ? <button type="button" className="btn-link" style={{ marginTop: 6 }} onClick={() => go('DEST')}>Change</button> : null}
+          </div>
+        ) : null}
+      </aside>
+    </div>
+  );
+}
+
+function destLabel(d: Destination): string {
+  if (d.kind === 'ADSET') return d.adset.name;
+  if (d.kind === 'NEW_ADSET') return `New ad set in ${d.campaign.name}`;
+  return 'New campaign';
+}
+
+function StepHead({ title, sub }: { title: string; sub: string }) {
+  return <header className="ws-head"><h2>{title}</h2><p>{sub}</p></header>;
+}
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <h3 className="ws-section">{children}</h3>;
+}
+
+/** Campaign → ad set → ad, each marked new or existing, with what it spends. */
+function StructureMap({ account, form, dest }: { account: AdAccount; form: FormState; dest: Destination }) {
+  const sym = currencySymbol(account.currency);
+  const newBudget = form.budget.amount ? `${sym}${Number(form.budget.amount).toLocaleString('en-IN')}${form.budget.type === 'DAILY' ? '/day' : ' lifetime'}` : '';
+  const campaign = dest.kind === 'ADSET' ? dest.adset.campaign : dest.kind === 'NEW_ADSET' ? dest.campaign : undefined;
+  const nodes: { level: string; isNew: boolean; name: string; meta: string }[] = [
+    {
+      level: 'Campaign',
+      isNew: dest.kind === 'NEW_CAMPAIGN',
+      name: dest.kind === 'NEW_CAMPAIGN' ? form.campaign.name || 'New campaign' : campaign?.name || '',
+      meta: dest.kind === 'NEW_CAMPAIGN'
+        ? [objectiveLabel(form.campaign.objective), form.budget.level === 'CAMPAIGN' && newBudget ? `${newBudget} campaign budget` : 'Ad set budget'].join(' · ')
+        : campaign ? [objectiveLabel(campaign.objective), budgetText(campaign, account.currency)].join(' · ') : '',
+    },
+    {
+      level: 'Ad set',
+      isNew: dest.kind !== 'ADSET',
+      name: dest.kind === 'ADSET' ? dest.adset.name : form.adset.name || 'New ad set',
+      meta: dest.kind === 'ADSET'
+        ? (dest.adset.daily_budget || dest.adset.lifetime_budget ? `${adsetBudget(dest.adset, account.currency)} ad set budget` : 'Uses the campaign budget')
+        : (form.budget.level === 'ADSET' && newBudget ? `${newBudget} ad set budget` : campaign && (campaign.daily_budget || campaign.lifetime_budget) ? 'Uses the campaign budget' : newBudget ? 'Uses the campaign budget' : ''),
+    },
+    {
+      level: 'Ad',
+      isNew: true,
+      name: form.ad.name || 'Your ad',
+      meta: form.ad.kind === 'CATALOG' ? `Catalog ad · ${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single'}` : form.ad.kind === 'POST' ? 'Existing post' : 'Image ad',
+    },
+  ];
+  return (
+    <div className="structure">
+      {nodes.map((n, i) => (
+        <div key={n.level} className="node" style={{ marginLeft: i * 22 }}>
+          <span className={`tag ${n.isNew ? 'new' : ''}`}>{n.isNew ? 'New' : 'Existing'}</span>
+          <span className="lvl">{n.level}</span>
+          <span className="nm">{n.name}</span>
+          <span className="mt">{n.meta}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
