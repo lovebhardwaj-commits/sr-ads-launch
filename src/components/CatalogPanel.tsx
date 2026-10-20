@@ -14,6 +14,45 @@ const RELEVANCE: Record<string, string> = { USED: 'Used in this ad account', LIN
 type State = 'pass' | 'warn' | 'fail' | 'info';
 interface Row { state: State; title: string; detail?: string; action?: 'link' }
 
+type SetLite = { id: string; name: string; product_count?: number; products?: { data?: { id: string; image_url?: string }[] } };
+
+function SetThumbs({ s }: { s: SetLite }) {
+  const imgs = (s.products?.data || []).map((p) => p.image_url).filter(Boolean).slice(0, 4) as string[];
+  if (!imgs.length) return null;
+  return <span className="set-thumbs" aria-hidden>{imgs.map((src, i) => <img key={i} src={src} alt="" loading="lazy" />)}</span>;
+}
+
+/** Out-of-stock count and a sample of product links, for the chosen product set. */
+function SetChecks({ setId }: { setId: string }) {
+  const res = useAsync<{ outOfStock: number | null; links: { id: string; name: string; url?: string; ok: boolean; reason: string }[]; noUrl: number }>(`set-health-${setId}`, () => apiGet('set-health', { set: setId }));
+  if (res.loading) return <div className="set-checks"><Loading text="Checking products and links…" /></div>;
+  if (res.error || !res.data) return <div className="set-checks"><div className="health-row warn"><span className="icon"><AlertTriangle size={16} /></span><div><div className="t">Couldn&apos;t check this product set</div><div className="d">{res.error}</div></div></div></div>;
+  const { outOfStock, links, noUrl } = res.data;
+  const bad = links.filter((l) => !l.ok);
+  return (
+    <div className="set-checks" aria-live="polite">
+      {outOfStock != null ? (
+        <div className={`health-row ${outOfStock ? 'warn' : 'pass'}`}>
+          <span className="icon">{outOfStock ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}</span>
+          <div><div className="t">{outOfStock ? `${outOfStock}${outOfStock >= 100 ? '+' : ''} out of stock` : 'No out-of-stock products'}</div>{outOfStock ? <div className="d">Meta stops showing them once the catalog syncs; until then a click can land on a sold-out page.</div> : null}</div>
+        </div>
+      ) : null}
+      {links.length ? (
+        <div className={`health-row ${bad.length ? 'warn' : 'pass'}`}>
+          <span className="icon">{bad.length ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}</span>
+          <div>
+            <div className="t">{bad.length ? `${bad.length} of ${links.length} sampled product links have problems` : `${links.length} of ${links.length} sampled product links open a product page`}</div>
+            {bad.length ? <div className="d">{bad.slice(0, 3).map((l) => `${l.name}: ${l.reason}`).join(' · ')}</div> : <div className="d">Clicks on a product go to that product&apos;s page.</div>}
+          </div>
+        </div>
+      ) : null}
+      {noUrl ? (
+        <div className="health-row warn"><span className="icon"><AlertTriangle size={16} /></span><div><div className="t">{noUrl} sampled {noUrl === 1 ? 'product has' : 'products have'} no link</div><div className="d">Meta can&apos;t show products without a link in the catalog.</div></div></div>
+      ) : null}
+    </div>
+  );
+}
+
 const isUnavailable = (x: any): x is { unavailable: string } => x && typeof x === 'object' && 'unavailable' in x;
 
 /** Turn the raw health payload into readable checks. */
@@ -108,7 +147,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
   catalogId: string;
   locked: boolean;
   onCatalog: (id: string) => void;
-  productSets: { id: string; name: string; product_count?: number }[];
+  productSets: SetLite[];
   productSetsLoading: boolean;
   productSetsError: string;
   productSetId: string;
@@ -205,11 +244,15 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
           {productSetsLoading ? <Loading text="Loading product sets…" /> : productSetsError ? <div className="notice bad">{productSetsError}</div> : !productSets.length ? (
             <div className="notice warn">This catalog has no product sets yet.</div>
           ) : chosenSet && !pickingSet ? (
-            <div className="set-row on" style={{ cursor: 'default' }}>
-              <span className="set-name">{chosenSet.name}</span>
-              <span className="set-meta">{chosenSet.product_count != null ? `${chosenSet.product_count.toLocaleString('en-IN')} products · ` : ''}{chosenSet.id}</span>
-              <button type="button" className="btn-link" onClick={() => setPickingSet(true)}>Change</button>
-            </div>
+            <>
+              <div className="set-row on" style={{ cursor: 'default' }}>
+                <SetThumbs s={chosenSet} />
+                <span className="set-name">{chosenSet.name}</span>
+                <span className="set-meta">{chosenSet.product_count != null ? `${chosenSet.product_count.toLocaleString('en-IN')} products` : ''}</span>
+                <button type="button" className="btn-link" onClick={() => setPickingSet(true)}>Change</button>
+              </div>
+              <SetChecks setId={chosenSet.id} />
+            </>
           ) : (
             <>
               {productSets.length > 6 ? (
@@ -219,8 +262,9 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
                 {sets.map((s) => (
                   <label key={s.id} className={`set-row ${s.id === productSetId ? 'on' : ''}`}>
                     <input type="radio" name="product-set" checked={s.id === productSetId} onChange={() => { onProductSet(s.id); setPickingSet(false); setQ(''); }} />
+                    <SetThumbs s={s} />
                     <span className="set-name">{s.name}</span>
-                    <span className="set-meta">{s.product_count != null ? `${s.product_count.toLocaleString('en-IN')} products · ` : ''}{s.id}</span>
+                    <span className="set-meta">{s.product_count != null ? `${s.product_count.toLocaleString('en-IN')} products` : ''}</span>
                   </label>
                 ))}
                 {!sets.length ? <div className="hint" style={{ padding: 8 }}>No product sets match “{q}”.</div> : null}
