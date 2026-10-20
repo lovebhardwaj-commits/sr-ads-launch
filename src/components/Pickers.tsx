@@ -43,7 +43,8 @@ export function CampaignPicker({ account, title, source, adFit, onPick }: {
         else if (!sourceIsCatalog && catalog) blocked = 'Catalog campaigns only take catalog ad sets';
       }
       if (adFit) {
-        if (adFit.isCatalog && catalog !== adFit.catalogId) blocked = 'Needs a catalog campaign using your ad\u2019s catalog';
+        if (adFit.isCatalog && catalog && catalog !== adFit.catalogId) blocked = 'Uses a different catalog';
+        else if (adFit.isCatalog && !catalog && normalizeObjective(c.objective) !== 'OUTCOME_SALES') blocked = 'Catalog ads need a Sales campaign';
         else if (!adFit.isCatalog && catalog) blocked = 'Catalog campaigns need a catalog ad';
       }
       return { c, catalog, blocked };
@@ -86,7 +87,10 @@ export function AdsetPicker({ account, onPick, onCreateNew, title = 'Pick the ad
   const blockedFor = (a: AdsetLite) => {
     if (!adFit) return '';
     const set = a.promoted_object?.product_set_id;
-    if (adFit.isCatalog) return set && a.campaign?.promoted_object?.product_catalog_id === adFit.catalogId ? '' : 'Needs a catalog ad set on your ad\u2019s catalog';
+    if (adFit.isCatalog) {
+      if (set) return a.campaign?.promoted_object?.product_catalog_id === adFit.catalogId ? '' : 'Uses a different catalog';
+      return normalizeObjective(a.campaign?.objective) === 'OUTCOME_SALES' ? '' : 'Catalog ads need a Sales campaign';
+    }
     return set ? 'Catalog ad sets need a catalog ad' : '';
   };
   const items = (res.data || [])

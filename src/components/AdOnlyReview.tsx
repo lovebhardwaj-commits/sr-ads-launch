@@ -18,7 +18,8 @@ export default function AdOnlyReview({ account, form, target, onClose, onDone }:
   const [failed, setFailed] = useState<LaunchResult | null>(null);
   const [error, setError] = useState('');
   const ad = form.ad;
-  const isCatalog = !!target.promoted_object?.product_set_id;
+  const isCatalog = ad.kind === 'CATALOG';
+  const targetSet = target.promoted_object?.product_set_id;
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
@@ -36,7 +37,8 @@ export default function AdOnlyReview({ account, form, target, onClose, onDone }:
       ? `${ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} from catalog, "${cta}"`
       : ad.kind === 'POST' ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post` : `New ad with uploaded image${ad.imageName ? ` (${ad.imageName})` : ''}, "${cta}"`],
   ];
-  if (isCatalog) rows.push(['Products', 'From the ad set\u2019s product set']);
+  if (isCatalog) rows.push(['Products', targetSet ? 'From the ad set\u2019s product set' : 'From the product set chosen for the ad (ad-level catalog)']);
+  if (isCatalog) rows.push(['Destination', ad.destination === 'APP_WEB' ? 'App, website as backup' : 'Website']);
   if (isCatalog || ad.kind === 'UPLOAD') rows.push([isCatalog ? 'See more URL' : 'Website', ad.link]);
   rows.push(['URL parameters', buildUrlTags(ad.urlTags || {}) || 'None']);
 
