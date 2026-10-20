@@ -1,5 +1,5 @@
 'use client';
-import { ChevronLeft, ChevronRight, Heart, MessageCircle, Play, Send } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Heart, Maximize2, MessageCircle, Play, Send, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '@/lib/client-api';
 import { CTAS, PRODUCT_TOKENS, URL_DYNAMIC_PARAMS, UTM_FIELDS, buildUrlTags } from '@/lib/constants';
@@ -43,7 +43,7 @@ function Tokens({ onInsert }: { onInsert: (t: string) => void }) {
 /** All images of a product: main image plus catalog additional images. */
 const imagesOf = (p: Product) => [p.image_url, ...(p.additional_image_urls || [])].filter(Boolean).slice(0, 5) as string[];
 
-export default function AdSection({ form, setAd, productSetId, catalogId }: {
+export default function AdSection({ form, setAd, productSetId }: {
   form: FormState;
   setAd: (p: Partial<FormState['ad']>) => void;
   productSetId: string;
@@ -51,13 +51,26 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
 }) {
   const ad = form.ad;
   const pages = useAsync<Page[]>('pages', () => apiGet('pages'));
-  const products = useAsync<Product[]>(productSetId ? `products-${productSetId}` : catalogId ? `products-c-${catalogId}` : null,
-    () => apiGet('products', { set: productSetId || undefined, catalog: catalogId }));
+  // Preview products come from the chosen product set only.
+  const products = useAsync<Product[]>(productSetId ? `products-${productSetId}` : null, () => apiGet('products', { set: productSetId }));
   const [placement, setPlacement] = useState<'FEED' | 'STORIES' | 'REELS'>('FEED');
   const [idx, setIdx] = useState(0);
   const [tick, setTick] = useState(0);
   // Slideshow preview plays only on the card under the cursor.
   const [hoverId, setHoverId] = useState('');
+  // Enlarged view of one product's images.
+  const [zoom, setZoom] = useState<{ p: Product; i: number } | null>(null);
+  useEffect(() => {
+    if (!zoom) return;
+    const key = (e: KeyboardEvent) => {
+      const n = imagesOf(zoom.p).length;
+      if (e.key === 'Escape') setZoom(null);
+      if (e.key === 'ArrowRight') setZoom({ ...zoom, i: (zoom.i + 1) % n });
+      if (e.key === 'ArrowLeft') setZoom({ ...zoom, i: (zoom.i - 1 + n) % n });
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [zoom]);
   // Once someone types a See more URL, picking a Page no longer overwrites it.
   const [linkEdited, setLinkEdited] = useState(false);
 
@@ -229,8 +242,10 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
           <Segmented value={placement} onChange={(v) => { setPlacement(v); setIdx(0); }} options={[{ key: 'FEED', label: 'Feed' }, { key: 'STORIES', label: 'Stories' }, { key: 'REELS', label: 'Reels' }]} />
         </div>
 
-        {products.loading ? <Loading text="Loading products…" /> : products.error ? <div className="notice warn">Preview unavailable: {products.error}</div> : !sample.length ? (
+        {!productSetId ? (
           <div className="note">Pick a product set to preview real products.</div>
+        ) : products.loading ? <Loading text="Loading products…" /> : products.error ? <div className="notice warn">Preview unavailable: {products.error}</div> : !sample.length ? (
+          <div className="note">This product set has no products to preview.</div>
         ) : placement === 'FEED' ? (
           <>
             <div className="preview-head">
@@ -243,8 +258,9 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
                 const imgs = imagesOf(p);
                 return (
                   <div key={p.id} className={`p-card ${ad.format === 'SINGLE' ? 'single' : ''}`} onMouseEnter={() => setHoverId(p.id)} onMouseLeave={() => setHoverId('')}>
-                    <div className="img" style={{ backgroundImage: imageFor(p) ? `url("${imageFor(p)}")` : undefined }}>
+                    <div className="img zoomable" role="button" tabIndex={0} title="Click to enlarge" aria-label={`Enlarge ${p.name}`} onClick={() => setZoom({ p, i: frame(p) % Math.max(imagesOf(p).length, 1) })} onKeyDown={(e) => { if (e.key === 'Enter') setZoom({ p, i: 0 }); }} style={{ backgroundImage: imageFor(p) ? `url("${imageFor(p)}")` : undefined }}>
                       {badge(p)}
+                      <span className="zoom-hint" aria-hidden><Maximize2 size={12} /></span>
                       {ad.media === 'SLIDESHOW' && imgs.length > 1 ? <div className="dots">{imgs.map((_, i) => <span key={i} className={i === frame(p) % imgs.length ? 'on' : ''} />)}</div> : null}
                     </div>
                     <div className="body">
@@ -273,14 +289,14 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
                 <div className="bars">{steps.slice(0, 20).map((p, i) => <span key={p.id} className={i <= idx ? 'on' : ''} />)}</div>
                 <div className="who"><div className="pg">{pageName.slice(0, 1)}</div><div><div>{ig?.username ? ig.username : pageName}</div><div className="s">Sponsored</div></div></div>
                 <div className="story-card">
-                  <div className="img" style={{ backgroundImage: imageFor(cur) ? `url("${imageFor(cur)}")` : undefined, position: 'relative' }}>{badge(cur)}</div>
+                  <div className="img zoomable" role="button" tabIndex={0} title="Click to enlarge" onClick={() => setZoom({ p: cur, i: frame(cur) % Math.max(imagesOf(cur).length, 1) })} style={{ backgroundImage: imageFor(cur) ? `url("${imageFor(cur)}")` : undefined, position: 'relative' }}>{badge(cur)}<span className="zoom-hint" aria-hidden><Maximize2 size={12} /></span></div>
                   <div className="meta"><b>{fill(ad.headline, cur) || cur.name}</b>{fill(ad.description, cur)}</div>
                 </div>
                 <div className="cta-pill">{ctaLabel}</div>
               </>
             ) : (
               <>
-                <div className="reel-img" style={{ backgroundImage: imageFor(cur) ? `url("${imageFor(cur)}")` : undefined }} />
+                <div className="reel-img zoomable" role="button" tabIndex={0} title="Click to enlarge" onClick={() => setZoom({ p: cur, i: frame(cur) % Math.max(imagesOf(cur).length, 1) })} style={{ backgroundImage: imageFor(cur) ? `url("${imageFor(cur)}")` : undefined }} />
                 <div className="reel-shade" />
                 {badge(cur)}
                 <div className="rail"><Heart size={18} /><MessageCircle size={18} /><Send size={18} /></div>
@@ -301,9 +317,33 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
           {' '}{placement === 'FEED'
             ? `Showing ${sample.length} of ${all.length}${all.length >= 25 ? '+' : ''} products${ad.format === 'CAROUSEL' ? ' (carousel ads show up to 10 cards)' : ''}.`
             : `Product ${Math.min(idx + 1, steps.length)} of ${steps.length}${all.length >= 25 && ad.format === 'CAROUSEL' ? '+' : ''}.`}
-          {' '}Meta picks the products per shopper when the ad runs.
+          {' '}Click an image to enlarge it. Meta picks the products per shopper when the ad runs.
         </p>
       </div>
+
+      {zoom ? (
+        <div className="overlay" role="dialog" aria-modal="true" aria-label={`${zoom.p.name} images`} onClick={(e) => { if (e.target === e.currentTarget) setZoom(null); }}>
+          <div className="zoom-box">
+            <button type="button" className="icon-btn zoom-close" aria-label="Close" onClick={() => setZoom(null)}><X size={18} /></button>
+            <div className="zoom-stage">
+              {imagesOf(zoom.p).length > 1 ? (
+                <button type="button" className="nav" style={{ left: 10 }} aria-label="Previous image" onClick={() => setZoom({ ...zoom, i: (zoom.i - 1 + imagesOf(zoom.p).length) % imagesOf(zoom.p).length })}><ChevronLeft size={16} /></button>
+              ) : null}
+              {imagesOf(zoom.p)[zoom.i] ? <img src={imagesOf(zoom.p)[zoom.i]} alt={zoom.p.name} /> : <div className="note">No image</div>}
+              {imagesOf(zoom.p).length > 1 ? (
+                <button type="button" className="nav" style={{ right: 10 }} aria-label="Next image" onClick={() => setZoom({ ...zoom, i: (zoom.i + 1) % imagesOf(zoom.p).length })}><ChevronRight size={16} /></button>
+              ) : null}
+            </div>
+            <div className="zoom-meta">
+              <div>
+                <div className="strong">{zoom.p.name}</div>
+                <div className="hint" style={{ marginTop: 2 }}>{[zoom.p.sale_price && zoom.p.sale_price !== zoom.p.price ? `${zoom.p.sale_price} (was ${zoom.p.price})` : zoom.p.price, zoom.p.brand].filter(Boolean).join(' · ')}</div>
+              </div>
+              {imagesOf(zoom.p).length > 1 ? <span className="hint">Image {zoom.i + 1} of {imagesOf(zoom.p).length}</span> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
