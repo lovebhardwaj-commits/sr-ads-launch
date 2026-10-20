@@ -89,11 +89,18 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
 
   return (
     <div className={`content ${view.kind === 'ad-first' ? 'wide' : ''}`}>
-      <div className="page-top">
-        <div>
-          <h1 className="page-title">Launch</h1>
-          <p className="page-sub">Launch campaigns, ad sets and ads straight to Facebook — pre-filled for Indian D2C, every field editable.</p>
-        </div>
+      <div className={`page-top ${view.kind === 'ad-first' ? 'compact' : ''}`}>
+        {view.kind === 'ad-first' ? (
+          <div>
+            <h1 className="page-title">Start with an Ad</h1>
+            <p className="page-sub">Create the ad, choose where it runs, launch.</p>
+          </div>
+        ) : (
+          <div>
+            <h1 className="page-title">Launch</h1>
+            <p className="page-sub">Launch campaigns, ad sets and ads straight to Facebook — pre-filled for Indian D2C, every field editable.</p>
+          </div>
+        )}
         <div className="account-pick">
           <span className="label">Ad account</span>
           {accounts.loading ? <Loading text="Loading ad accounts…" /> : accounts.error ? (
@@ -186,10 +193,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
           </div>
         </>
       ) : view.kind === 'ad-first' ? (
-        <>
-          <button type="button" className="back" onClick={startOver}><ChevronLeft size={13} /> All launch options</button>
-          <AdFirstWorkspace key={account.id} account={account} form={form} setForm={setForm} onDone={done} />
-        </>
+        <AdFirstWorkspace key={account.id} account={account} form={form} setForm={setForm} onDone={done} onExit={startOver} />
       ) : view.kind === 'form' ? (
         <LaunchForm
           key={`${view.mode}-${campaign?.id || ''}-${source?.id || ''}`}
