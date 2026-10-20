@@ -129,6 +129,10 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
   const [linkError, setLinkError] = useState('');
   const [q, setQ] = useState('');
   const [showAll, setShowAll] = useState(false);
+  // Product set list collapses to the chosen set; "Change" reopens it.
+  const [pickingSet, setPickingSet] = useState(!productSetId);
+  // Any chosen set (picked here or defaulted to All products) collapses the list.
+  useEffect(() => { setPickingSet(!productSetId); }, [productSetId]);
 
   const result = useMemo(() => (health.data ? readHealth(health.data, pixelId) : null), [health.data, pixelId]);
   useEffect(() => { onReady(!!result?.ready); }, [result, onReady]);
@@ -153,6 +157,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
   const listed = scoped ? relevant.concat(current && !relevant.includes(current) ? [current] : []) : (catalogs.data || []);
   const others = (catalogs.data || []).length - relevant.length;
   const sets = productSets.filter((s) => !q || s.name.toLowerCase().includes(q.toLowerCase()));
+  const chosenSet = productSets.find((s) => s.id === productSetId);
 
   return (
     <div className="card">
@@ -199,6 +204,12 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
         <Field label={`Product sets${productSets.length ? ` (${productSets.length})` : ''}`} hint="The products this ad set can show. Create or edit sets in Commerce Manager.">
           {productSetsLoading ? <Loading text="Loading product sets…" /> : productSetsError ? <div className="notice bad">{productSetsError}</div> : !productSets.length ? (
             <div className="notice warn">This catalog has no product sets yet.</div>
+          ) : chosenSet && !pickingSet ? (
+            <div className="set-row on" style={{ cursor: 'default' }}>
+              <span className="set-name">{chosenSet.name}</span>
+              <span className="set-meta">{chosenSet.product_count != null ? `${chosenSet.product_count.toLocaleString('en-IN')} products · ` : ''}{chosenSet.id}</span>
+              <button type="button" className="btn-link" onClick={() => setPickingSet(true)}>Change</button>
+            </div>
           ) : (
             <>
               {productSets.length > 6 ? (
@@ -207,7 +218,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
               <div className="set-list" role="radiogroup" aria-label="Product sets">
                 {sets.map((s) => (
                   <label key={s.id} className={`set-row ${s.id === productSetId ? 'on' : ''}`}>
-                    <input type="radio" name="product-set" checked={s.id === productSetId} onChange={() => onProductSet(s.id)} />
+                    <input type="radio" name="product-set" checked={s.id === productSetId} onChange={() => { onProductSet(s.id); setPickingSet(false); setQ(''); }} />
                     <span className="set-name">{s.name}</span>
                     <span className="set-meta">{s.product_count != null ? `${s.product_count.toLocaleString('en-IN')} products · ` : ''}{s.id}</span>
                   </label>
