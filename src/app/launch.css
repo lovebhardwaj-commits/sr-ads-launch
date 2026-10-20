@@ -206,3 +206,9 @@ details.adv[open] > summary { margin-bottom: 12px; }
   .ws-steps { order: 3; flex-basis: 100%; justify-content: flex-start; overflow-x: auto; }
 }
 @media (max-width: 760px) { .content.wide { padding: 20px 16px 110px; } }
+
+/* Product set thumbnails and checks */
+.set-thumbs { display: inline-flex; gap: 3px; flex: none; }
+.set-thumbs img { width: 30px; height: 30px; object-fit: contain; background: #fff; border: 1px solid var(--card-line); border-radius: 6px; }
+.set-checks { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+.ws-draft b { color: var(--ink); }
