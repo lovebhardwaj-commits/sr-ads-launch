@@ -56,6 +56,8 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
   const [placement, setPlacement] = useState<'FEED' | 'STORIES' | 'REELS'>('FEED');
   const [idx, setIdx] = useState(0);
   const [tick, setTick] = useState(0);
+  // Slideshow preview plays only on the card under the cursor.
+  const [hoverId, setHoverId] = useState('');
   // Once someone types a See more URL, picking a Page no longer overwrites it.
   const [linkEdited, setLinkEdited] = useState(false);
 
@@ -81,12 +83,13 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ad.pageId, page?.website]);
 
-  // Slideshow preview: rotate each product's images.
+  // Slideshow preview: rotate the hovered product's images only.
   useEffect(() => {
-    if (ad.media !== 'SLIDESHOW') return;
-    const t = setInterval(() => setTick((n) => n + 1), 1400);
+    setTick(0);
+    if (ad.media !== 'SLIDESHOW' || !hoverId) return;
+    const t = setInterval(() => setTick((n) => n + 1), 1100);
     return () => clearInterval(t);
-  }, [ad.media]);
+  }, [ad.media, hoverId]);
 
   // Slideshow only exists for carousels.
   useEffect(() => {
@@ -101,14 +104,15 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
   const cur = steps[Math.min(idx, Math.max(steps.length - 1, 0))];
   const ctaLabel = CTAS.find((c) => c.key === ad.cta)?.label || 'Shop now';
   const urlTags = buildUrlTags(ad.urlTags || {});
+  const frame = (p: Product) => (ad.media === 'SLIDESHOW' && p.id === hoverId ? tick : 0);
   const imageFor = (p: Product) => {
     const imgs = imagesOf(p);
-    return ad.media === 'SLIDESHOW' && imgs.length ? imgs[tick % imgs.length] : imgs[0];
+    return imgs.length ? imgs[frame(p) % imgs.length] : undefined;
   };
   const badge = (p: Product) => {
     const imgs = imagesOf(p);
     if (ad.media === 'VIDEO') return <span className="media-badge"><Play size={9} fill="#fff" /> Video if available</span>;
-    if (ad.media === 'SLIDESHOW') return <span className="media-badge">{imgs.length > 1 ? `${(tick % imgs.length) + 1}/${imgs.length}` : '1 image'}</span>;
+    if (ad.media === 'SLIDESHOW') return <span className="media-badge">{imgs.length > 1 ? `${(frame(p) % imgs.length) + 1}/${imgs.length}` : '1 image'}</span>;
     return null;
   };
   const pageName = page?.name || 'Select a Page';
@@ -160,6 +164,14 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
             { key: 'VIDEO', label: 'Product videos' },
           ]}
         />
+      </Field>
+      <Field
+        label="Destination"
+        hint={ad.destination === 'APP_WEB'
+          ? 'Opens the product in your app when it\u2019s installed and the catalog has deep links for it; otherwise the product page on your website.'
+          : 'People go to the product page on your website. App deep links in the catalog are ignored.'}
+      >
+        <Segmented value={ad.destination} onChange={(v) => setAd({ destination: v })} options={[{ key: 'WEBSITE', label: 'Website' }, { key: 'APP_WEB', label: 'App, website as backup' }]} />
       </Field>
       <Field label="Primary text">
         <textarea className="input" value={ad.message} onChange={(e) => setAd({ message: e.target.value })} rows={3} />
@@ -230,10 +242,10 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
               {sample.map((p) => {
                 const imgs = imagesOf(p);
                 return (
-                  <div key={p.id} className={`p-card ${ad.format === 'SINGLE' ? 'single' : ''}`}>
+                  <div key={p.id} className={`p-card ${ad.format === 'SINGLE' ? 'single' : ''}`} onMouseEnter={() => setHoverId(p.id)} onMouseLeave={() => setHoverId('')}>
                     <div className="img" style={{ backgroundImage: imageFor(p) ? `url("${imageFor(p)}")` : undefined }}>
                       {badge(p)}
-                      {ad.media === 'SLIDESHOW' && imgs.length > 1 ? <div className="dots">{imgs.map((_, i) => <span key={i} className={i === tick % imgs.length ? 'on' : ''} />)}</div> : null}
+                      {ad.media === 'SLIDESHOW' && imgs.length > 1 ? <div className="dots">{imgs.map((_, i) => <span key={i} className={i === frame(p) % imgs.length ? 'on' : ''} />)}</div> : null}
                     </div>
                     <div className="body">
                       <div style={{ minWidth: 0 }}>
@@ -254,7 +266,7 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
             </div>
           </>
         ) : cur ? (
-          <div className="phone" aria-label={`${placement === 'STORIES' ? 'Stories' : 'Reels'} preview`}>
+          <div className="phone" aria-label={`${placement === 'STORIES' ? 'Stories' : 'Reels'} preview`} onMouseEnter={() => setHoverId(cur.id)} onMouseLeave={() => setHoverId('')}>
             {placement === 'STORIES' ? (
               <>
                 <div className="bg" style={{ backgroundImage: imageFor(cur) ? `url("${imageFor(cur)}")` : undefined }} />
@@ -278,14 +290,14 @@ export default function AdSection({ form, setAd, productSetId, catalogId }: {
             )}
             {steps.length > 1 ? (
               <>
-                <button type="button" className="nav" style={{ left: 6 }} aria-label="Previous product" onClick={() => setIdx((i) => Math.max(0, i - 1))}><ChevronLeft size={14} /></button>
-                <button type="button" className="nav" style={{ right: 6 }} aria-label="Next product" onClick={() => setIdx((i) => Math.min(steps.length - 1, i + 1))}><ChevronRight size={14} /></button>
+                <button type="button" className="nav" style={{ left: 6 }} aria-label="Previous product" onClick={() => { const i = Math.max(0, idx - 1); setIdx(i); if (hoverId) setHoverId(steps[i].id); }}><ChevronLeft size={14} /></button>
+                <button type="button" className="nav" style={{ right: 6 }} aria-label="Next product" onClick={() => { const i = Math.min(steps.length - 1, idx + 1); setIdx(i); if (hoverId) setHoverId(steps[i].id); }}><ChevronRight size={14} /></button>
               </>
             ) : null}
           </div>
         ) : null}
         <p className="hint">
-          {placement === 'FEED' ? 'Facebook and Instagram feed.' : placement === 'STORIES' ? 'Stories: catalog images are shown 1:1 inside the story frame.' : 'Reels: product images fill the frame; Meta may crop them.'}
+          {ad.media === 'SLIDESHOW' ? 'Hover a product to play its slideshow. ' : ''}{placement === 'FEED' ? 'Facebook and Instagram feed.' : placement === 'STORIES' ? 'Stories: catalog images are shown 1:1 inside the story frame.' : 'Reels: product images fill the frame; Meta may crop them.'}
           {' '}{placement === 'FEED'
             ? `Showing ${sample.length} of ${all.length}${all.length >= 25 ? '+' : ''} products${ad.format === 'CAROUSEL' ? ' (carousel ads show up to 10 cards)' : ''}.`
             : `Product ${Math.min(idx + 1, steps.length)} of ${steps.length}${all.length >= 25 && ad.format === 'CAROUSEL' ? '+' : ''}.`}

@@ -6,9 +6,12 @@ export default function ResultView({ result, account, onAgain }: { result: Launc
   const act = account.account_id || account.id.replace('act_', '');
   const base = 'https://adsmanager.facebook.com/adsmanager/manage';
   const c = result.created;
-  const link = c.campaign
-    ? `${base}/campaigns?act=${act}&selected_campaign_ids=${c.campaign.id}`
-    : c.adset ? `${base}/adsets?act=${act}&selected_adset_ids=${c.adset.id}` : `${base}/campaigns?act=${act}`;
+  const firstAd = c.ads.find((a) => a.id);
+  // Edit view, so the new ad (or ad set / campaign) opens ready to review.
+  const editAd = firstAd ? `${base}/ads/edit?act=${act}&selected_ad_ids=${firstAd.id}` : '';
+  const editAdset = c.adset ? `${base}/adsets/edit?act=${act}&selected_adset_ids=${c.adset.id}` : '';
+  const editCampaign = c.campaign ? `${base}/campaigns/edit?act=${act}&selected_campaign_ids=${c.campaign.id}` : '';
+  const link = editAd || editAdset || editCampaign || `${base}/campaigns?act=${act}`;
 
   return (
     <div style={{ marginTop: 30 }}>
@@ -27,9 +30,15 @@ export default function ResultView({ result, account, onAgain }: { result: Launc
         </dl>
         <div className="launch-bar">
           <a className="btn-primary" href={link} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-            Open in Ads Manager <ExternalLink size={13} />
+            Review {firstAd ? 'ad' : c.adset ? 'ad set' : 'campaign'} in Ads Manager <ExternalLink size={13} />
           </a>
           <button type="button" className="btn-ghost" onClick={onAgain}>Launch another</button>
+        </div>
+        <div className="hint" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 12 }}>
+          <span>Edit in Ads Manager:</span>
+          {editCampaign ? <a href={editCampaign} target="_blank" rel="noreferrer">Campaign</a> : null}
+          {editAdset ? <a href={editAdset} target="_blank" rel="noreferrer">Ad set</a> : null}
+          {editAd ? <a href={editAd} target="_blank" rel="noreferrer">Ad</a> : null}
         </div>
       </div>
     </div>
