@@ -242,6 +242,8 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
 export function validateAd(form: FormState, isCatalog: boolean, withCatalog = false): Missing[] {
   const m: Missing[] = [];
   const ad = form.ad;
+  // Every ad the launcher creates is named by the person, as campaigns and ad sets are.
+  if (!ad.name.trim()) m.push({ key: 'ad.name', label: 'Ad name' });
   const validUrl = /^https?:\/\/\S+\.\S+/.test(ad.link.trim());
   if (isCatalog) {
     if (withCatalog && !form.campaign.catalogId) m.push({ key: 'campaign.catalogId', label: 'Catalog' });
