@@ -65,6 +65,7 @@ export function defaultForm(catalog = false): FormState {
       instagramUserId: '',
       format: 'CAROUSEL',
       media: 'IMAGES',
+      destination: 'WEBSITE',
       message: catalog ? CATALOG_AD_TEXT.message : '',
       headline: catalog ? CATALOG_AD_TEXT.headline : '',
       description: catalog ? CATALOG_AD_TEXT.description : '',
@@ -88,6 +89,8 @@ export function buildContext(mode: Mode, form: FormState, campaign?: CampaignLit
   const adsetBudget = needsCampaign ? form.budget.level === 'ADSET' : !campaignHasBudget;
   const isDup = mode === 'DUP_NEW' || mode === 'DUP_EXISTING';
   const sourceIsCatalog = !!source?.promoted_object?.product_set_id;
+  // Meta allows a catalog ad in a Sales campaign without a catalog: the ad carries its own product set.
+  const adLevelCatalog = !isCatalog && form.ad.kind === 'CATALOG' && objective === 'OUTCOME_SALES';
   return {
     mode,
     needsCampaign,
@@ -97,7 +100,8 @@ export function buildContext(mode: Mode, form: FormState, campaign?: CampaignLit
     adsetBudget,
     campaignHasBudget,
     showBudget: needsCampaign || adsetBudget,
-    needsAd: isCatalog && (!isDup || form.ad.addNew),
+    needsAd: (isCatalog || adLevelCatalog) && (!isDup || form.ad.addNew),
+    adLevelCatalog,
     needsStandardAd: !isCatalog && (form.ad.kind === 'UPLOAD' || form.ad.kind === 'POST') && (!isDup || form.ad.addNew),
     copyAds: isDup && form.ad.copyOriginal,
     isDup,
@@ -228,7 +232,7 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
   if (a.ageMin > a.ageMax) m.push({ key: 'adset.age', label: 'Min age below max age' });
   if (a.placement === 'MANUAL' && !a.platforms.length) m.push({ key: 'adset.platforms', label: 'At least one placement' });
   const ad = form.ad;
-  if (ctx.needsAd) m.push(...validateAd(form, true));
+  if (ctx.needsAd) m.push(...validateAd(form, true, ctx.adLevelCatalog));
   if (ctx.needsStandardAd) m.push(...validateAd(form, false));
   if (ctx.isDup && !ad.copyOriginal && !ad.addNew) m.push({ key: 'ad.none', label: 'Copy the original ads or add a new ad' });
   return m;
