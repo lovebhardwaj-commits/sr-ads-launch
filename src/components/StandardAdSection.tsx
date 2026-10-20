@@ -2,9 +2,11 @@
 import { ImagePlus, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { apiGet, apiPost, errorText } from '@/lib/client-api';
-import { CTAS, URL_DYNAMIC_PARAMS, UTM_FIELDS, buildUrlTags } from '@/lib/constants';
+import { CTAS } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
 import type { FormState } from '@/lib/types';
+import { NormalPreview } from './AdPreview';
+import TrackingFields from './TrackingFields';
 import { Field, Loading, SearchSelect, Segmented, Select, TextInput, Toggle } from './ui';
 
 interface Page { id: string; name: string; website?: string; instagram_business_account?: { id: string; username?: string } }
@@ -19,13 +21,17 @@ function pageWebsite(p?: Page): string {
 }
 
 /** Normal (non-catalog) ad: upload an image, or promote an existing Facebook / Instagram post. */
-export default function StandardAdSection({ form, setAd, accountId, allowSkip, allowCatalog = false }: {
+export default function StandardAdSection({ form, setAd, accountId, allowSkip, allowCatalog = false, preview = true, hideSetup = false }: {
   form: FormState;
   setAd: (p: Partial<FormState['ad']>) => void;
   accountId: string;
   allowSkip: boolean;
   /** Sales campaigns: offer a catalog ad without a campaign-level catalog */
   allowCatalog?: boolean;
+  /** Render the live preview below the form (off when it is shown in a side panel) */
+  preview?: boolean;
+  /** Hide the ad type switch (chosen elsewhere) */
+  hideSetup?: boolean;
 }) {
   const ad = form.ad;
   const pages = useAsync<Page[]>('pages', () => apiGet('pages'));
@@ -81,13 +87,9 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
     }
   };
 
-  const urlTags = buildUrlTags(ad.urlTags || {});
-  const ctaLabel = CTAS.find((c) => c.key === ad.cta)?.label || 'Shop now';
-  const pageName = page?.name || 'Select a Page';
-
   return (
     <div className="card">
-      <Field label="Ad setup">
+      {!hideSetup ? <Field label="Ad setup">
         <Segmented
           value={ad.kind === 'CATALOG' && !allowCatalog ? 'UPLOAD' : ad.kind}
           onChange={(v) => setAd({ kind: v })}
@@ -98,7 +100,7 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
             ...(allowSkip ? [{ key: 'NONE' as const, label: 'Skip, add ads later' }] : []),
           ]}
         />
-      </Field>
+      </Field> : null}
 
       {ad.kind === 'CATALOG' && allowCatalog ? (
         <p className="hint">Shows products from a catalog in this ad. The campaign doesn&apos;t need a catalog: pick the catalog and product set below.</p>
@@ -106,6 +108,9 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
         <p className="hint">The ad set is launched without ads. Add ads to it later in Ads Manager or Create Ads.</p>
       ) : (
         <>
+          <Field label="Ad name">
+            <TextInput value={ad.name} onChange={(e) => setAd({ name: e.target.value })} placeholder={ad.kind === 'POST' ? 'e.g. Diwali post · Boost' : 'e.g. Diwali sale · Image'} />
+          </Field>
           <Field label="Facebook Page">
             {pages.loading ? <Loading text="Loading Pages…" /> : pages.error ? <div className="notice bad">{pages.error}</div> : (
               <SearchSelect
@@ -128,9 +133,6 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
               )}
             </Field>
           ) : null}
-          <Field label="Ad name">
-            <TextInput value={ad.name} onChange={(e) => setAd({ name: e.target.value })} placeholder={`e.g. ${form.adset.name || 'Ad'} - ${ad.kind === 'POST' ? 'Existing post' : 'Image'}`} />
-          </Field>
 
           {ad.kind === 'UPLOAD' ? (
             <>
@@ -183,44 +185,12 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
             </>
           )}
 
-          <h3 className="label strong" style={{ marginTop: 22, fontSize: 13 }}>Tracking</h3>
-          <div className="row field" style={{ marginTop: 6 }}>
-            {UTM_FIELDS.slice(0, 2).map((f) => (
-              <Field key={f.key} label={f.label}><TextInput value={ad.urlTags[f.key]} placeholder={f.placeholder} onChange={(e) => setAd({ urlTags: { ...ad.urlTags, [f.key]: e.target.value } })} /></Field>
-            ))}
-          </div>
-          <div className="row field">
-            {UTM_FIELDS.slice(2, 4).map((f) => (
-              <Field key={f.key} label={f.label}><TextInput value={ad.urlTags[f.key]} placeholder={f.placeholder} onChange={(e) => setAd({ urlTags: { ...ad.urlTags, [f.key]: e.target.value } })} /></Field>
-            ))}
-          </div>
-          <Field label={UTM_FIELDS[4].label}>
-            <TextInput value={ad.urlTags.term} placeholder={UTM_FIELDS[4].placeholder} onChange={(e) => setAd({ urlTags: { ...ad.urlTags, term: e.target.value } })} />
-          </Field>
-          <Field label="URL parameters" hint={<>Added to the ad&apos;s link. Dynamic parameters Meta fills per ad: {URL_DYNAMIC_PARAMS.join(', ')}</>}>
-            <TextInput readOnly value={urlTags || 'No URL parameters'} aria-label="URL parameters" />
-          </Field>
+          <details className="adv">
+            <summary>Advanced · tracking</summary>
+            <TrackingFields form={form} setAd={setAd} hint="Added to the ad's link." />
+          </details>
 
-          {ad.kind === 'UPLOAD' ? (
-            <div className="preview" aria-label="Ad preview">
-              <div className="preview-head">
-                <div className="pg">{pageName.slice(0, 1)}</div>
-                <div><div className="n">{pageName}</div><div className="s">Sponsored</div></div>
-              </div>
-              <div className="preview-text">{ad.message || 'Primary text'}</div>
-              <div className="p-card single">
-                <div className="img" style={{ backgroundImage: ad.imageUrl ? `url("${ad.imageUrl}")` : undefined, backgroundSize: 'cover' }} />
-                <div className="body">
-                  <div style={{ minWidth: 0 }}>
-                    <div className="ds">{ad.link.replace(/^https?:\/\//, '').split('/')[0].toUpperCase() || 'YOURSTORE.COM'}</div>
-                    <div className="h">{ad.headline || 'Headline'}</div>
-                  </div>
-                  <span className="cta">{ctaLabel}</span>
-                </div>
-              </div>
-              <p className="hint">Feed preview. Meta adapts the image for Stories and Reels.</p>
-            </div>
-          ) : null}
+          {preview ? <NormalPreview form={form} /> : null}
         </>
       )}
     </div>

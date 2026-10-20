@@ -1,35 +1,21 @@
 'use client';
-import { ChevronLeft, ChevronRight, Heart, Maximize2, MessageCircle, Play, Send, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiGet } from '@/lib/client-api';
-import { CTAS, PRODUCT_TOKENS, URL_DYNAMIC_PARAMS, UTM_FIELDS, buildUrlTags } from '@/lib/constants';
+import { CTAS, PRODUCT_TOKENS } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
 import { CATALOG_AD_TEXT } from '@/lib/form';
 import type { FormState } from '@/lib/types';
+import { CatalogPreview } from './AdPreview';
+import TrackingFields from './TrackingFields';
 import { Field, Loading, SearchSelect, Segmented, Select, TextInput, Toggle } from './ui';
 
 interface Page { id: string; name: string; website?: string; link?: string; instagram_business_account?: { id: string; username?: string } }
 
 /** A Page's website field can hold several space-separated sites, with or without https://. */
-function pageWebsite(p?: Page): string {
+export function pageWebsite(p?: { website?: string }): string {
   const first = (p?.website || '').split(/[\s,]+/).find(Boolean);
   if (!first) return '';
   return /^https?:\/\//i.test(first) ? first : `https://${first}`;
-}
-
-/** Carousel ads show up to 10 cards. */
-const MAX_CARDS = 10;
-interface Product { id: string; name: string; price?: string; sale_price?: string; image_url?: string; additional_image_urls?: string[]; brand?: string; url?: string }
-
-function fill(text: string, p?: Product): string {
-  if (!p) return text;
-  const current = p.sale_price && p.sale_price !== p.price ? p.sale_price : p.price;
-  return text
-    .replace(/\{\{\s*product\.name[^}]*\}\}/g, p.name || '')
-    .replace(/\{\{\s*product\.current_price[^}]*\}\}/g, current || '')
-    .replace(/\{\{\s*product\.price[^}]*\}\}/g, p.price || '')
-    .replace(/\{\{\s*product\.brand[^}]*\}\}/g, p.brand || '')
-    .replace(/\{\{\s*product\.description[^}]*\}\}/g, '');
 }
 
 function Tokens({ onInsert }: { onInsert: (t: string) => void }) {
@@ -40,98 +26,43 @@ function Tokens({ onInsert }: { onInsert: (t: string) => void }) {
   );
 }
 
-/** All images of a product: main image plus catalog additional images. */
-const imagesOf = (p: Product) => [p.image_url, ...(p.additional_image_urls || [])].filter(Boolean).slice(0, 5) as string[];
-
-export default function AdSection({ form, setAd, productSetId }: {
+/** Catalog ad form. `preview` renders the live preview below it (when it isn't shown in a side panel). */
+export default function AdSection({ form, setAd, productSetId, preview = true }: {
   form: FormState;
   setAd: (p: Partial<FormState['ad']>) => void;
   productSetId: string;
-  catalogId: string;
+  catalogId?: string;
+  preview?: boolean;
 }) {
   const ad = form.ad;
   const pages = useAsync<Page[]>('pages', () => apiGet('pages'));
-  // Preview products come from the chosen product set only.
-  const products = useAsync<Product[]>(productSetId ? `products-${productSetId}` : null, () => apiGet('products', { set: productSetId }));
-  const [placement, setPlacement] = useState<'FEED' | 'STORIES' | 'REELS'>('FEED');
-  const [idx, setIdx] = useState(0);
-  const [tick, setTick] = useState(0);
-  // Slideshow preview plays only on the card under the cursor.
-  const [hoverId, setHoverId] = useState('');
-  // Enlarged view of one product's images.
-  const [zoom, setZoom] = useState<{ p: Product; i: number } | null>(null);
-  useEffect(() => {
-    if (!zoom) return;
-    const key = (e: KeyboardEvent) => {
-      const n = imagesOf(zoom.p).length;
-      if (e.key === 'Escape') setZoom(null);
-      if (e.key === 'ArrowRight') setZoom({ ...zoom, i: (zoom.i + 1) % n });
-      if (e.key === 'ArrowLeft') setZoom({ ...zoom, i: (zoom.i - 1 + n) % n });
-    };
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
-  }, [zoom]);
-  // Once someone types a See more URL, picking a Page no longer overwrites it.
   const [linkEdited, setLinkEdited] = useState(false);
-
   const page = pages.data?.find((p) => p.id === ad.pageId);
   const ig = page?.instagram_business_account;
 
-  // Catalog ads start from the template text if nothing has been written yet.
   useEffect(() => {
     if (!ad.message && !ad.headline && !ad.description) setAd({ ...CATALOG_AD_TEXT });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Use the Page's Instagram account by default; clear it if the Page changes.
   useEffect(() => {
     setAd({ instagramUserId: ig?.id || '' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ad.pageId, ig?.id]);
-
-  // See more URL follows the selected Page's website (until edited by hand).
   useEffect(() => {
     if (!page || linkEdited) return;
     setAd({ link: pageWebsite(page) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ad.pageId, page?.website]);
-
-  // Slideshow preview: rotate the hovered product's images only.
-  useEffect(() => {
-    setTick(0);
-    if (ad.media !== 'SLIDESHOW' || !hoverId) return;
-    const t = setInterval(() => setTick((n) => n + 1), 1100);
-    return () => clearInterval(t);
-  }, [ad.media, hoverId]);
-
-  // Slideshow only exists for carousels.
   useEffect(() => {
     if (ad.format === 'SINGLE' && ad.media === 'SLIDESHOW') setAd({ media: 'IMAGES' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ad.format]);
 
-  const all = products.data || [];
-  // Feed: the carousel shows up to 10 cards. Stories and Reels step through every fetched product.
-  const sample = useMemo(() => all.slice(0, ad.format === 'SINGLE' ? 1 : MAX_CARDS), [all, ad.format]);
-  const steps = ad.format === 'SINGLE' ? sample : all;
-  const cur = steps[Math.min(idx, Math.max(steps.length - 1, 0))];
-  const ctaLabel = CTAS.find((c) => c.key === ad.cta)?.label || 'Shop now';
-  const urlTags = buildUrlTags(ad.urlTags || {});
-  const frame = (p: Product) => (ad.media === 'SLIDESHOW' && p.id === hoverId ? tick : 0);
-  const imageFor = (p: Product) => {
-    const imgs = imagesOf(p);
-    return imgs.length ? imgs[frame(p) % imgs.length] : undefined;
-  };
-  const badge = (p: Product) => {
-    const imgs = imagesOf(p);
-    if (ad.media === 'VIDEO') return <span className="media-badge"><Play size={9} fill="#fff" /> Video if available</span>;
-    if (ad.media === 'SLIDESHOW') return <span className="media-badge">{imgs.length > 1 ? `${(frame(p) % imgs.length) + 1}/${imgs.length}` : '1 image'}</span>;
-    return null;
-  };
-  const pageName = page?.name || 'Select a Page';
-
   return (
     <div className="card">
+      <Field label="Ad name">
+        <TextInput value={ad.name} onChange={(e) => setAd({ name: e.target.value })} placeholder="e.g. Skin care · Retarget · Carousel" />
+      </Field>
       <Field label="Facebook Page">
         {pages.loading ? <Loading text="Loading Pages…" /> : pages.error ? <div className="notice bad">{pages.error}</div> : (
           <SearchSelect
@@ -140,8 +71,8 @@ export default function AdSection({ form, setAd, productSetId }: {
             ariaLabel="Facebook Page"
             noun="Pages"
             placeholder="Select a Page..."
-            searchPlaceholder={`Search ${(pages.data || []).length.toLocaleString('en-IN')} Pages by name or ID`}
-            options={(pages.data || []).map((p) => ({ key: p.id, label: p.name, meta: [p.id, p.instagram_business_account?.username ? `@${p.instagram_business_account.username}` : ''].filter(Boolean).join(' · ') }))}
+            searchPlaceholder={`Search ${(pages.data || []).length.toLocaleString('en-IN')} Pages by name`}
+            options={(pages.data || []).map((p) => ({ key: p.id, label: p.name, meta: p.instagram_business_account?.username ? `@${p.instagram_business_account.username}` : '' }))}
           />
         )}
       </Field>
@@ -149,43 +80,30 @@ export default function AdSection({ form, setAd, productSetId }: {
         <Field>
           {ig ? (
             <Toggle checked={!!ad.instagramUserId} onChange={(v) => setAd({ instagramUserId: v ? ig.id : '' })} label={<>Run on Instagram as <span className="strong">@{ig.username || ig.id}</span></>} />
-          ) : (
-            <p className="hint" style={{ margin: 0 }}>This Page has no connected Instagram account, so Instagram placements use the Page name.</p>
-          )}
+          ) : <p className="hint" style={{ margin: 0 }}>This Page has no connected Instagram account, so Instagram placements use the Page name.</p>}
         </Field>
       ) : null}
-      <Field label="Ad name">
-        <TextInput value={ad.name} onChange={(e) => setAd({ name: e.target.value })} placeholder={`e.g. ${form.adset.name || 'Catalog'} - Carousel`} />
-      </Field>
-      <Field label="Format">
+
+      <div className="subhead">Format</div>
+      <Field>
         <Segmented value={ad.format} onChange={(v) => setAd({ format: v })} options={[{ key: 'CAROUSEL', label: 'Carousel' }, { key: 'SINGLE', label: 'Single image or video' }]} />
       </Field>
       <Field
-        label="Catalog media"
-        hint={ad.media === 'SLIDESHOW'
-          ? 'Each card plays the product\u2019s images from the catalog (main image plus additional images).'
-          : ad.media === 'VIDEO'
-            ? 'Products with a video in the catalog show it; others show their image.'
-            : 'Each product shows its main catalog image.'}
+        label="Media"
+        hint={ad.media === 'SLIDESHOW' ? 'Each card plays the product\u2019s images from the catalog.' : ad.media === 'VIDEO' ? 'Products with a video in the catalog show it; others show their image.' : 'Each product shows its main catalog image.'}
       >
         <Segmented
           value={ad.media}
           onChange={(v) => setAd({ media: v })}
           options={[
             { key: 'IMAGES', label: 'Images' },
-            { key: 'SLIDESHOW', label: 'Multiple images (slideshow)', disabled: ad.format === 'SINGLE', title: ad.format === 'SINGLE' ? 'Carousel only' : undefined },
+            { key: 'SLIDESHOW', label: 'Slideshow', disabled: ad.format === 'SINGLE', title: ad.format === 'SINGLE' ? 'Carousel only' : 'Multiple images per product' },
             { key: 'VIDEO', label: 'Product videos' },
           ]}
         />
       </Field>
-      <Field
-        label="Destination"
-        hint={ad.destination === 'APP_WEB'
-          ? 'Opens the product in your app when it\u2019s installed and the catalog has deep links for it; otherwise the product page on your website.'
-          : 'People go to the product page on your website. App deep links in the catalog are ignored.'}
-      >
-        <Segmented value={ad.destination} onChange={(v) => setAd({ destination: v })} options={[{ key: 'WEBSITE', label: 'Website' }, { key: 'APP_WEB', label: 'App, website as backup' }]} />
-      </Field>
+
+      <div className="subhead">Text</div>
       <Field label="Primary text">
         <textarea className="input" value={ad.message} onChange={(e) => setAd({ message: e.target.value })} rows={3} />
         <Tokens onInsert={(t) => setAd({ message: `${ad.message}${ad.message.endsWith(' ') || !ad.message ? '' : ' '}${t}` })} />
@@ -200,150 +118,29 @@ export default function AdSection({ form, setAd, productSetId }: {
           <Tokens onInsert={(t) => setAd({ description: `${ad.description}${ad.description && !ad.description.endsWith(' ') ? ' ' : ''}${t}` })} />
         </Field>
       </div>
-      <div className="row field">
-        <Field label="Call to action">
-          <Select value={ad.cta} onChange={(v) => setAd({ cta: v })} options={CTAS} />
-        </Field>
-        <Field label="See more URL" hint={page && !linkEdited ? (pageWebsite(page) ? 'From the Page\u2019s website. Each product card opens its own product page.' : 'This Page has no website listed; enter one.') : 'Where the card at the end sends people. Each product card opens its own product page.'}>
-          <TextInput value={ad.link} onChange={(e) => { setLinkEdited(true); setAd({ link: e.target.value }); }} placeholder="https://yourstore.com" />
-        </Field>
-      </div>
-      {ad.format === 'CAROUSEL' ? (
-        <Field>
-          <Toggle checked={ad.endCard} onChange={(v) => setAd({ endCard: v })} label="Add a card at the end with your Page profile picture" />
-        </Field>
-      ) : null}
-
-      <h3 className="label strong" style={{ marginTop: 22, fontSize: 13 }}>Tracking</h3>
-      <div className="row field" style={{ marginTop: 6 }}>
-        {UTM_FIELDS.slice(0, 2).map((f) => (
-          <Field key={f.key} label={f.label}>
-            <TextInput value={ad.urlTags[f.key]} placeholder={f.placeholder} onChange={(e) => setAd({ urlTags: { ...ad.urlTags, [f.key]: e.target.value } })} />
-          </Field>
-        ))}
-      </div>
-      <div className="row field">
-        {UTM_FIELDS.slice(2, 4).map((f) => (
-          <Field key={f.key} label={f.label}>
-            <TextInput value={ad.urlTags[f.key]} placeholder={f.placeholder} onChange={(e) => setAd({ urlTags: { ...ad.urlTags, [f.key]: e.target.value } })} />
-          </Field>
-        ))}
-      </div>
-      <Field label={UTM_FIELDS[4].label}>
-        <TextInput value={ad.urlTags.term} placeholder={UTM_FIELDS[4].placeholder} onChange={(e) => setAd({ urlTags: { ...ad.urlTags, term: e.target.value } })} />
-      </Field>
-      <Field label="URL parameters" hint={<>Added to every product link. Dynamic parameters Meta fills per ad: {URL_DYNAMIC_PARAMS.join(', ')}</>}>
-        <TextInput readOnly value={urlTags || 'No URL parameters'} aria-label="URL parameters" />
+      <Field label="Call to action">
+        <Select value={ad.cta} onChange={(v) => setAd({ cta: v })} options={CTAS} />
       </Field>
 
-      <div className="preview" aria-label="Ad preview">
-        <div className="preview-tabs">
-          <span className="label" style={{ margin: 0 }}>Preview</span>
-          <Segmented value={placement} onChange={(v) => { setPlacement(v); setIdx(0); }} options={[{ key: 'FEED', label: 'Feed' }, { key: 'STORIES', label: 'Stories' }, { key: 'REELS', label: 'Reels' }]} />
-        </div>
+      <div className="subhead">Where people go</div>
+      <Field hint="Each product opens its own page from the catalog.">
+        <Segmented value={ad.destination} onChange={(v) => setAd({ destination: v })} options={[{ key: 'WEBSITE', label: 'Website' }, { key: 'APP_WEB', label: 'App, website as backup' }]} />
+      </Field>
+      <Field label="See more URL" hint={page && !linkEdited ? (pageWebsite(page) ? 'From the Page\u2019s website. Used by the last card and the See more link.' : 'This Page has no website listed; enter one.') : 'Used by the last card and the See more link.'}>
+        <TextInput value={ad.link} onChange={(e) => { setLinkEdited(true); setAd({ link: e.target.value }); }} placeholder="https://yourstore.com" />
+      </Field>
 
-        {!productSetId ? (
-          <div className="note">Pick a product set to preview real products.</div>
-        ) : products.loading ? <Loading text="Loading products…" /> : products.error ? <div className="notice warn">Preview unavailable: {products.error}</div> : !sample.length ? (
-          <div className="note">This product set has no products to preview.</div>
-        ) : placement === 'FEED' ? (
-          <>
-            <div className="preview-head">
-              <div className="pg">{pageName.slice(0, 1)}</div>
-              <div><div className="n">{pageName}</div><div className="s">Sponsored</div></div>
-            </div>
-            <div className="preview-text">{fill(ad.message, sample[0])}</div>
-            <div className="cards-row">
-              {sample.map((p) => {
-                const imgs = imagesOf(p);
-                return (
-                  <div key={p.id} className={`p-card ${ad.format === 'SINGLE' ? 'single' : ''}`} onMouseEnter={() => setHoverId(p.id)} onMouseLeave={() => setHoverId('')}>
-                    <div className="img zoomable" role="button" tabIndex={0} title="Click to enlarge" aria-label={`Enlarge ${p.name}`} onClick={() => setZoom({ p, i: frame(p) % Math.max(imagesOf(p).length, 1) })} onKeyDown={(e) => { if (e.key === 'Enter') setZoom({ p, i: 0 }); }} style={{ backgroundImage: imageFor(p) ? `url("${imageFor(p)}")` : undefined }}>
-                      {badge(p)}
-                      <span className="zoom-hint" aria-hidden><Maximize2 size={12} /></span>
-                      {ad.media === 'SLIDESHOW' && imgs.length > 1 ? <div className="dots">{imgs.map((_, i) => <span key={i} className={i === frame(p) % imgs.length ? 'on' : ''} />)}</div> : null}
-                    </div>
-                    <div className="body">
-                      <div style={{ minWidth: 0 }}>
-                        <div className="h">{fill(ad.headline, p) || p.name}</div>
-                        <div className="ds">{fill(ad.description, p)}</div>
-                      </div>
-                      <span className="cta">{ctaLabel}</span>
-                    </div>
-                  </div>
-                );
-              })}
-              {ad.format === 'CAROUSEL' && ad.endCard ? (
-                <div className="p-card end">
-                  <div className="img">See more at<br />{ad.link.replace(/^https?:\/\//, '') || 'your website'}</div>
-                  <div className="body"><div className="h">{pageName}</div><span className="cta">{ctaLabel}</span></div>
-                </div>
-              ) : null}
-            </div>
-          </>
-        ) : cur ? (
-          <div className="phone" aria-label={`${placement === 'STORIES' ? 'Stories' : 'Reels'} preview`} onMouseEnter={() => setHoverId(cur.id)} onMouseLeave={() => setHoverId('')}>
-            {placement === 'STORIES' ? (
-              <>
-                <div className="bg" style={{ backgroundImage: imageFor(cur) ? `url("${imageFor(cur)}")` : undefined }} />
-                <div className="bars">{steps.slice(0, 20).map((p, i) => <span key={p.id} className={i <= idx ? 'on' : ''} />)}</div>
-                <div className="who"><div className="pg">{pageName.slice(0, 1)}</div><div><div>{ig?.username ? ig.username : pageName}</div><div className="s">Sponsored</div></div></div>
-                <div className="story-card">
-                  <div className="img zoomable" role="button" tabIndex={0} title="Click to enlarge" onClick={() => setZoom({ p: cur, i: frame(cur) % Math.max(imagesOf(cur).length, 1) })} style={{ backgroundImage: imageFor(cur) ? `url("${imageFor(cur)}")` : undefined, position: 'relative' }}>{badge(cur)}<span className="zoom-hint" aria-hidden><Maximize2 size={12} /></span></div>
-                  <div className="meta"><b>{fill(ad.headline, cur) || cur.name}</b>{fill(ad.description, cur)}</div>
-                </div>
-                <div className="cta-pill">{ctaLabel}</div>
-              </>
-            ) : (
-              <>
-                <div className="reel-img zoomable" role="button" tabIndex={0} title="Click to enlarge" onClick={() => setZoom({ p: cur, i: frame(cur) % Math.max(imagesOf(cur).length, 1) })} style={{ backgroundImage: imageFor(cur) ? `url("${imageFor(cur)}")` : undefined }} />
-                <div className="reel-shade" />
-                {badge(cur)}
-                <div className="rail"><Heart size={18} /><MessageCircle size={18} /><Send size={18} /></div>
-                <div className="reel-text"><b>{ig?.username ? ig.username : pageName} · Sponsored</b>{fill(ad.message, cur).slice(0, 110)}</div>
-                <div className="reel-cta"><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fill(ad.headline, cur) || cur.name}</span><b>{ctaLabel}</b></div>
-              </>
-            )}
-            {steps.length > 1 ? (
-              <>
-                <button type="button" className="nav" style={{ left: 6 }} aria-label="Previous product" onClick={() => { const i = Math.max(0, idx - 1); setIdx(i); if (hoverId) setHoverId(steps[i].id); }}><ChevronLeft size={14} /></button>
-                <button type="button" className="nav" style={{ right: 6 }} aria-label="Next product" onClick={() => { const i = Math.min(steps.length - 1, idx + 1); setIdx(i); if (hoverId) setHoverId(steps[i].id); }}><ChevronRight size={14} /></button>
-              </>
-            ) : null}
-          </div>
+      <details className="adv">
+        <summary>Advanced · tracking and end card</summary>
+        {ad.format === 'CAROUSEL' ? (
+          <Field>
+            <Toggle checked={ad.endCard} onChange={(v) => setAd({ endCard: v })} label="Add a card at the end with your Page profile picture" />
+          </Field>
         ) : null}
-        <p className="hint">
-          {ad.media === 'SLIDESHOW' ? 'Hover a product to play its slideshow. ' : ''}{placement === 'FEED' ? 'Facebook and Instagram feed.' : placement === 'STORIES' ? 'Stories: catalog images are shown 1:1 inside the story frame.' : 'Reels: product images fill the frame; Meta may crop them.'}
-          {' '}{placement === 'FEED'
-            ? `Showing ${sample.length} of ${all.length}${all.length >= 25 ? '+' : ''} products${ad.format === 'CAROUSEL' ? ' (carousel ads show up to 10 cards)' : ''}.`
-            : `Product ${Math.min(idx + 1, steps.length)} of ${steps.length}${all.length >= 25 && ad.format === 'CAROUSEL' ? '+' : ''}.`}
-          {' '}Click an image to enlarge it. Meta picks the products per shopper when the ad runs.
-        </p>
-      </div>
+        <TrackingFields form={form} setAd={setAd} hint="Added to every product link." />
+      </details>
 
-      {zoom ? (
-        <div className="overlay" role="dialog" aria-modal="true" aria-label={`${zoom.p.name} images`} onClick={(e) => { if (e.target === e.currentTarget) setZoom(null); }}>
-          <div className="zoom-box">
-            <button type="button" className="icon-btn zoom-close" aria-label="Close" onClick={() => setZoom(null)}><X size={18} /></button>
-            <div className="zoom-stage">
-              {imagesOf(zoom.p).length > 1 ? (
-                <button type="button" className="nav" style={{ left: 10 }} aria-label="Previous image" onClick={() => setZoom({ ...zoom, i: (zoom.i - 1 + imagesOf(zoom.p).length) % imagesOf(zoom.p).length })}><ChevronLeft size={16} /></button>
-              ) : null}
-              {imagesOf(zoom.p)[zoom.i] ? <img src={imagesOf(zoom.p)[zoom.i]} alt={zoom.p.name} /> : <div className="note">No image</div>}
-              {imagesOf(zoom.p).length > 1 ? (
-                <button type="button" className="nav" style={{ right: 10 }} aria-label="Next image" onClick={() => setZoom({ ...zoom, i: (zoom.i + 1) % imagesOf(zoom.p).length })}><ChevronRight size={16} /></button>
-              ) : null}
-            </div>
-            <div className="zoom-meta">
-              <div>
-                <div className="strong">{zoom.p.name}</div>
-                <div className="hint" style={{ marginTop: 2 }}>{[zoom.p.sale_price && zoom.p.sale_price !== zoom.p.price ? `${zoom.p.sale_price} (was ${zoom.p.price})` : zoom.p.price, zoom.p.brand].filter(Boolean).join(' · ')}</div>
-              </div>
-              {imagesOf(zoom.p).length > 1 ? <span className="hint">Image {zoom.i + 1} of {imagesOf(zoom.p).length}</span> : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {preview ? <CatalogPreview form={form} productSetId={productSetId} /> : null}
     </div>
   );
 }
