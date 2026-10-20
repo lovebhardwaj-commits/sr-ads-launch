@@ -86,6 +86,8 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
   if (ctx.needsAd) {
     rows.push(['Ad', `${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} from catalog, "${CTAS.find((x) => x.key === form.ad.cta)?.label}"`]);
     rows.push(['Catalog media', form.ad.media === 'SLIDESHOW' ? 'Multiple images (slideshow)' : form.ad.media === 'VIDEO' ? 'Product videos' : 'Images']);
+    rows.push(['Destination', form.ad.destination === 'APP_WEB' ? 'App, website as backup' : 'Website']);
+    if (ctx.adLevelCatalog) rows.push(['Catalog', 'Set on the ad (the campaign has no catalog)']);
     rows.push(['See more URL', form.ad.link]);
     rows.push(['URL parameters', buildUrlTags(form.ad.urlTags || {}) || 'None']);
   }

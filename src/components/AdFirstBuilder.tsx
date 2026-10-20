@@ -48,7 +48,7 @@ export default function AdFirstBuilder({ account, form, setForm, onNext, onStart
     <>
       <button type="button" className="back" onClick={onStartOver}><ChevronLeft size={13} /> Start over</button>
       <h2 className="section-title" style={{ marginTop: 0 }}>Start with an ad</h2>
-      <p className="note">Build the ad first. Next, add it to an existing ad set, or create a new ad set or campaign for it.</p>
+      <p className="note">Build the ad first. Next, add it to an existing ad set, or create a new ad set or campaign for it. Catalog ads can also go into Sales campaigns without a catalog.</p>
 
       <div className="card">
         <Field label="Ad type" hint={isCatalog ? 'Catalog ads show products from a catalog and run in Sales campaigns.' : 'Upload an image or promote an existing Facebook or Instagram post.'}>
