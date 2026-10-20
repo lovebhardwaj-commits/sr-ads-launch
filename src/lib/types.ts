@@ -102,6 +102,8 @@ export interface FormState {
     format: 'CAROUSEL' | 'SINGLE';
     /** Meta catalog media: product images, multi-image slideshow per card, or product video when available */
     media: 'IMAGES' | 'SLIDESHOW' | 'VIDEO';
+    /** Catalog ads: website only, or open the app via the catalog's deep links with the website as backup */
+    destination: 'WEBSITE' | 'APP_WEB';
     message: string;
     headline: string;
     description: string;
@@ -129,6 +131,8 @@ export interface FlowContext {
   showBudget: boolean;
   /** A catalog template ad will be created */
   needsAd: boolean;
+  /** Catalog ad inside a campaign without a catalog (ad-level catalog and product set) */
+  adLevelCatalog: boolean;
   /** A normal (non-catalog) ad will be created: uploaded image or existing post */
   needsStandardAd: boolean;
   /** Duplicate: copy the original ad set's ads */
