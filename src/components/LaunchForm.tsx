@@ -16,9 +16,15 @@ import ReviewModal from './ReviewModal';
 import StandardAdSection from './StandardAdSection';
 import { CheckPills, Field, Loading, Segmented, Select, TagSearch, TextInput, Toggle } from './ui';
 
-export interface ProductSet { id: string; name: string; product_count?: number }
+export interface ProductSet { id: string; name: string; product_count?: number; products?: { data?: { id: string; image_url?: string }[] } }
 
 const RETARGET_DAYS = [3, 7, 14, 30, 60, 90, 180].map((d) => ({ key: String(d), label: `${d} days` }));
+
+/** In the workspace, rarely changed settings sit in a collapsed section whose title shows their current values. */
+function Adv({ on, summary, children }: { on: boolean; summary: string; children: React.ReactNode }) {
+  if (!on) return <>{children}</>;
+  return <details className="adv"><summary>Advanced · {summary}</summary>{children}</details>;
+}
 
 export default function LaunchForm({ mode, account, form, setForm, campaign, source, onStartOver, onEditAd, onDone, embedded = false, summary, onMissing }: {
   mode: Mode;
@@ -186,6 +192,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
                 />
               </Field>
             ) : null}
+            <Adv on={embedded} summary={`${c.setup === 'ADVANTAGE_PLUS' ? 'Advantage+ Shopping' : 'Manual setup'} · ${bid.label}`}>
             <Field label="Campaign setup" hint={advantagePlus ? 'Advantage+ uses a campaign budget, Advantage+ Audience and Advantage+ Placements; those choices are locked below.' : undefined}>
               <Segmented value={c.setup} onChange={(v) => up('campaign', { setup: v })} options={[{ key: 'MANUAL', label: 'Manual' }, { key: 'ADVANTAGE_PLUS', label: 'Advantage+ Shopping' }]} />
             </Field>
@@ -204,6 +211,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
                 <TextInput inputMode="decimal" value={c.roasFloor} onChange={(e) => up('campaign', { roasFloor: e.target.value.replace(/[^\d.]/g, '') })} placeholder="e.g. 2.5" />
               </Field>
             ) : null}
+            </Adv>
             <BudgetField
               level="CAMPAIGN"
               label="Campaign budget (Advantage+ campaign budget)"
@@ -249,35 +257,42 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
 
         {/* Conversion */}
         <div className="subhead">Conversion</div>
-        {goal.destination === 'WEBSITE' || ctx.isCatalog ? (
-          <Field label="Conversion location" hint="Other conversion locations (app, messaging, calls) aren't supported in this launcher.">
-            <Segmented value="WEBSITE" onChange={() => undefined} options={[{ key: 'WEBSITE', label: 'Website' }]} />
-          </Field>
-        ) : null}
-        <Field label="Performance goal">
-          <Select value={goal.key} onChange={(v) => up('adset', { goal: v })} options={goals} />
-        </Field>
-        {ctx.isCatalog ? (
-          <Field label="Dataset" hint="Chosen in the Catalog card, where its link to the catalog is checked.">
-            <TextInput readOnly value={(() => { const px = pixels.data?.find((p) => p.id === a.pixelId); return px ? `${px.name} (${px.id})` : 'Select it in the Catalog card'; })()} aria-label="Dataset" />
-          </Field>
-        ) : goal.pixel ? (
-          <Field label="Dataset">
-            {pixels.loading ? <Loading text="Loading datasets…" /> : pixels.error ? <div className="notice bad">{pixels.error}</div> : (
-              <Select value={a.pixelId} onChange={(v) => up('adset', { pixelId: v })} placeholder="Select a dataset..." options={(pixels.data || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
-            )}
-          </Field>
-        ) : null}
-        {goal.pixel ? (
-          <Field label="Conversion event">
-            <Select value={goal.fixedEvent || a.event} disabled={!!goal.fixedEvent} onChange={(v) => up('adset', { event: v })} options={CONVERSION_EVENTS} />
-          </Field>
-        ) : null}
-        {goal.attribution ? (
-          <Field label="Attribution setting" hint="Some ad accounts lock this at the account level — if so, Facebook's own rejection message shows up at launch time.">
-            <Select value={a.attribution} onChange={(v) => up('adset', { attribution: v })} options={ATTRIBUTION} />
-          </Field>
-        ) : null}
+        {(() => {
+          const location = goal.destination === 'WEBSITE' || ctx.isCatalog ? (
+            <Field label="Conversion location" hint="Other conversion locations (app, messaging, calls) aren't supported in this launcher.">
+              <Segmented value="WEBSITE" onChange={() => undefined} options={[{ key: 'WEBSITE', label: 'Website' }]} />
+            </Field>
+          ) : null;
+          const goalField = (
+            <Field label="Performance goal">
+              <Select value={goal.key} onChange={(v) => up('adset', { goal: v })} options={goals} />
+            </Field>
+          );
+          const dataset = ctx.isCatalog ? (
+            <Field label="Dataset" hint="Chosen in the Catalog card, where its link to the catalog is checked.">
+              <TextInput readOnly value={(() => { const px = pixels.data?.find((p) => p.id === a.pixelId); return px ? `${px.name} (${px.id})` : 'Select it in the Catalog card'; })()} aria-label="Dataset" />
+            </Field>
+          ) : goal.pixel ? (
+            <Field label="Dataset">
+              {pixels.loading ? <Loading text="Loading datasets…" /> : pixels.error ? <div className="notice bad">{pixels.error}</div> : (
+                <Select value={a.pixelId} onChange={(v) => up('adset', { pixelId: v })} placeholder="Select a dataset..." options={(pixels.data || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
+              )}
+            </Field>
+          ) : null;
+          const event = goal.pixel ? (
+            <Field label="Conversion event">
+              <Select value={goal.fixedEvent || a.event} disabled={!!goal.fixedEvent} onChange={(v) => up('adset', { event: v })} options={CONVERSION_EVENTS} />
+            </Field>
+          ) : null;
+          const attribution = goal.attribution ? (
+            <Field label="Attribution setting" hint="Some ad accounts lock this at the account level — if so, Facebook's own rejection message shows up at launch time.">
+              <Select value={a.attribution} onChange={(v) => up('adset', { attribution: v })} options={ATTRIBUTION} />
+            </Field>
+          ) : null;
+          if (!embedded) return <>{location}{goalField}{dataset}{event}{attribution}</>;
+          const summary = [goal.label, goal.pixel ? CONVERSION_EVENTS.find((e) => e.key === (goal.fixedEvent || a.event))?.label : '', goal.attribution ? ATTRIBUTION.find((x) => x.key === a.attribution)?.label : ''].filter(Boolean).join(' · ');
+          return <>{dataset}<Adv on summary={summary}>{location}{goalField}{event}{attribution}</Adv></>;
+        })()}
 
         {/* Budget & schedule */}
         <div className="subhead">Budget &amp; schedule</div>
@@ -390,7 +405,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             <Field label="Minimum age" hint="Meta won't show ads to anyone younger. Advantage+ audience allows up to 25.">
               <Select value={String(Math.min(a.ageMin, 25))} onChange={(v) => up('adset', { ageMin: Number(v) })} options={AGES.filter((n) => n <= 25).map((n) => ({ key: String(n), label: String(n) }))} />
             </Field>
-            <Field label="Languages">{languageField}</Field>
+            {!embedded ? <Field label="Languages">{languageField}</Field> : null}
             <div className="label strong" style={{ marginTop: 18 }}>Audience suggestion (optional)</div>
             <p className="hint" style={{ marginTop: 0 }}>Meta starts with these, then looks beyond them when it finds people likely to convert.</p>
             <div className="row field">
@@ -419,27 +434,35 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             </div>
             <Field label="Gender">{genderField}</Field>
             {!retarget && a.audienceType === 'INTEREST' ? <Field label="Detailed targeting" hint="Include people who match any of these. Leave empty for broad.">{interestField}</Field> : null}
-            <Field label="Languages">{languageField}</Field>
+            {!embedded ? <Field label="Languages">{languageField}</Field> : null}
           </>
         ) : null}
 
         {/* Placements */}
-        <div className="subhead">Placements</div>
-        <Field>
-          <Segmented
-            value={a.placement}
-            onChange={(v) => up('adset', { placement: v })}
-            options={[
-              { key: 'ADVANTAGE', label: 'Advantage+ placements (recommended)' },
-              { key: 'MANUAL', label: 'Manual placements', disabled: advantagePlus, title: advantagePlus ? 'Not available with Advantage+ Shopping' : undefined },
-            ]}
-          />
-        </Field>
-        {a.placement === 'MANUAL' ? (
-          <div className="field" style={{ marginTop: 10 }}>
-            <CheckPills value={a.platforms} onChange={(v) => up('adset', { platforms: v })} options={PLATFORMS} />
-          </div>
-        ) : null}
+        {(() => {
+          const placements = (
+            <>
+              <Field label={embedded ? 'Placements' : undefined}>
+                <Segmented
+                  value={a.placement}
+                  onChange={(v) => up('adset', { placement: v })}
+                  options={[
+                    { key: 'ADVANTAGE', label: 'Advantage+ placements (recommended)' },
+                    { key: 'MANUAL', label: 'Manual placements', disabled: advantagePlus, title: advantagePlus ? 'Not available with Advantage+ Shopping' : undefined },
+                  ]}
+                />
+              </Field>
+              {a.placement === 'MANUAL' ? (
+                <div className="field" style={{ marginTop: 10 }}>
+                  <CheckPills value={a.platforms} onChange={(v) => up('adset', { platforms: v })} options={PLATFORMS} />
+                </div>
+              ) : null}
+            </>
+          );
+          if (!embedded) return <><div className="subhead">Placements</div>{placements}</>;
+          const summary = `${a.placement === 'ADVANTAGE' ? 'Advantage+ placements' : `${a.platforms.length} manual placements`} · ${a.locales.length ? a.locales.map((l) => l.name).join(', ') : 'All languages'}`;
+          return <Adv on summary={summary}>{placements}<Field label="Languages">{languageField}</Field></Adv>;
+        })()}
       </div>
 
       {/* ── Ad ── */}
