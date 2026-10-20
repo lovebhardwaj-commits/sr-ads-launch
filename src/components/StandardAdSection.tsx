@@ -19,11 +19,13 @@ function pageWebsite(p?: Page): string {
 }
 
 /** Normal (non-catalog) ad: upload an image, or promote an existing Facebook / Instagram post. */
-export default function StandardAdSection({ form, setAd, accountId, allowSkip }: {
+export default function StandardAdSection({ form, setAd, accountId, allowSkip, allowCatalog = false }: {
   form: FormState;
   setAd: (p: Partial<FormState['ad']>) => void;
   accountId: string;
   allowSkip: boolean;
+  /** Sales campaigns: offer a catalog ad without a campaign-level catalog */
+  allowCatalog?: boolean;
 }) {
   const ad = form.ad;
   const pages = useAsync<Page[]>('pages', () => apiGet('pages'));
@@ -40,12 +42,15 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip }:
 
   // Product tokens only work in catalog ads; clear them if the text came from a catalog setup.
   useEffect(() => {
+    // Catalog ads need a Sales campaign; fall back to a normal ad otherwise.
+    if (ad.kind === 'CATALOG' && !allowCatalog) { setAd({ kind: 'UPLOAD' }); return; }
+    if (ad.kind === 'CATALOG') return;
     const strip = (t: string) => (t.includes('{{product.') ? '' : t);
     if ([ad.message, ad.headline, ad.description].some((t) => t.includes('{{product.'))) {
       setAd({ message: strip(ad.message), headline: strip(ad.headline), description: strip(ad.description) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ad.kind, allowCatalog]);
 
   useEffect(() => {
     setAd({ instagramUserId: ig?.id || '' });
@@ -84,17 +89,20 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip }:
     <div className="card">
       <Field label="Ad setup">
         <Segmented
-          value={ad.kind === 'CATALOG' ? 'UPLOAD' : ad.kind}
+          value={ad.kind === 'CATALOG' && !allowCatalog ? 'UPLOAD' : ad.kind}
           onChange={(v) => setAd({ kind: v })}
           options={[
             { key: 'UPLOAD', label: 'Create ad' },
             { key: 'POST', label: 'Use existing post' },
+            ...(allowCatalog ? [{ key: 'CATALOG' as const, label: 'Catalog ad' }] : []),
             ...(allowSkip ? [{ key: 'NONE' as const, label: 'Skip, add ads later' }] : []),
           ]}
         />
       </Field>
 
-      {ad.kind === 'NONE' ? (
+      {ad.kind === 'CATALOG' && allowCatalog ? (
+        <p className="hint">Shows products from a catalog in this ad. The campaign doesn&apos;t need a catalog: pick the catalog and product set below.</p>
+      ) : ad.kind === 'NONE' ? (
         <p className="hint">The ad set is launched without ads. Add ads to it later in Ads Manager or Create Ads.</p>
       ) : (
         <>
