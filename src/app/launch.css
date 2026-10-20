@@ -173,3 +173,36 @@ details.adv[open] > summary { margin-bottom: 12px; }
   .ws-side { position: static; max-height: none; }
   .type-cards { grid-template-columns: 1fr; }
 }
+
+/* ── Workspace v2: full width, sticky step bar on top, editor + preview ── */
+.content.wide { max-width: none; padding: 24px 32px 120px; }
+.page-top.compact { margin-bottom: 14px; align-items: center; }
+.page-top.compact .page-title { font-size: 18px; margin-bottom: 2px; }
+.ws { display: block; }
+.ws-bar { position: sticky; top: 52px; z-index: 30; display: flex; align-items: center; gap: 16px; padding: 10px 14px; margin: 0 0 18px; background: var(--bg); border: 1px solid var(--card-line); border-radius: 12px; box-shadow: 0 6px 18px rgba(22, 21, 30, 0.05); }
+.ws-bar .ws-back, .ws-bar .ws-next { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; flex: none; }
+.ws-next-spacer { width: 1px; }
+.ws-steps { list-style: none; margin: 0; padding: 0; display: flex; align-items: center; flex: 1; min-width: 0; justify-content: center; gap: 0; }
+.ws-steps li { display: flex; align-items: center; min-width: 0; }
+.ws-steps li + li::before { content: ''; width: 28px; height: 1.5px; background: var(--input-line); margin: 0 6px; flex: none; }
+.ws-steps li.done + li::before, .ws-steps li.done::before { background: var(--ok, #2e7d4f); }
+.ws-steps .ws-step { width: auto; padding: 6px 10px; align-items: center; }
+.ws-steps .ws-step .s { max-width: 170px; }
+.ws-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 420px); gap: 28px; align-items: start; }
+.ws-body .ws-side { top: 124px; max-height: calc(100vh - 140px); }
+.ws-draft { margin: -8px 0 14px; padding: 0; }
+.ws-foot .need { border: 0; cursor: pointer; }
+.ws-foot .need:hover { text-decoration: underline; }
+.field.flash { animation: field-flash 1.2s ease; border-radius: 8px; }
+@keyframes field-flash { 0%, 60% { box-shadow: 0 0 0 3px var(--seg-on-line); background: var(--seg-on); } 100% { box-shadow: 0 0 0 0 transparent; background: transparent; } }
+.tree-filter { display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--muted); padding: 0 2px; }
+@media (max-width: 1240px) {
+  .ws-steps .ws-step .s { display: none; }
+}
+@media (max-width: 1000px) {
+  .ws-body { grid-template-columns: 1fr; }
+  .ws-body .ws-side { position: static; max-height: none; }
+  .ws-bar { flex-wrap: wrap; }
+  .ws-steps { order: 3; flex-basis: 100%; justify-content: flex-start; overflow-x: auto; }
+}
+@media (max-width: 760px) { .content.wide { padding: 20px 16px 110px; } }
