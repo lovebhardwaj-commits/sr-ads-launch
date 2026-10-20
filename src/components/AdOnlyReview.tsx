@@ -3,6 +3,8 @@ import { Fragment, useEffect, useState } from 'react';
 import { apiPost, errorText } from '@/lib/client-api';
 import { CTAS, buildUrlTags } from '@/lib/constants';
 import type { AdAccount, AdsetLite, FormState, LaunchResult } from '@/lib/types';
+import { adsetFacts } from './AdsetFacts';
+import ProductStrip from './ProductStrip';
 import { Segmented } from './ui';
 
 /** Reverse journey: review and add the ad to an existing ad set. */
@@ -30,8 +32,7 @@ export default function AdOnlyReview({ account, form, target, onClose, onDone }:
   const cta = CTAS.find((x) => x.key === ad.cta)?.label;
   const rows: [string, string][] = [
     ['Ad account', account.name],
-    ['Campaign', `${target.campaign?.name || ''} (existing)`],
-    ['Ad set', `${target.name} (existing)`],
+    ...adsetFacts(target, account),
     ['Ad name', ad.name || `${target.name} - ${isCatalog ? 'Catalog ad' : 'Ad'}`],
     ['Ad', isCatalog
       ? `${ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} from catalog, "${cta}"`
@@ -56,6 +57,7 @@ export default function AdOnlyReview({ account, form, target, onClose, onDone }:
         <h2 id="adonly-title">Review &amp; Launch</h2>
         <p className="note">Your ad is added to the existing ad set. The ad set&apos;s budget, audience and schedule stay as they are.</p>
         <dl className="kv">{rows.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>
+        {isCatalog ? <div style={{ marginTop: 12 }}><ProductStrip setId={targetSet || form.adset.productSetId} label="Products the ad can show" /></div> : null}
         <div className="field" style={{ marginTop: 18 }}>
           <span className="label">Start as</span>
           <Segmented value={status} onChange={setStatus} options={[{ key: 'PAUSED', label: 'Paused' }, { key: 'ACTIVE', label: 'Active' }]} />

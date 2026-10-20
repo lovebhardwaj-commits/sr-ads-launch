@@ -8,7 +8,9 @@ import AdOnlyReview from './AdOnlyReview';
 import AdSummaryCard from './AdSummaryCard';
 import DestinationTree, { type Destination } from './DestinationTree';
 import LaunchForm from './LaunchForm';
-import { adsetFit, budgetText, statusLabel } from './Pickers';
+import AdsetFacts from './AdsetFacts';
+import { adsetFit } from './Pickers';
+import ProductStrip from './ProductStrip';
 
 /**
  * "Start with an Ad" on one page: build the ad (collapses to a summary), pick where it goes in an
@@ -74,13 +76,16 @@ export default function AdFirstJourney({ account, form, setForm, onStartOver, on
         <>
           <h2 className="section-title"><span className="step-no">3</span> Review</h2>
           <div className="card">
-            <dl className="kv">
-              <dt>Campaign</dt><dd>{target.campaign?.name} · {target.campaign ? budgetText(target.campaign, account.currency) : ''}</dd>
-              <dt>Ad set</dt><dd>{target.name} · {statusLabel(target.effective_status || target.status)}</dd>
-              <dt>Ads in this ad set</dt><dd>{target.ads?.summary?.total_count ?? 0} now, {(target.ads?.summary?.total_count ?? 0) + 1} after</dd>
-              {isCatalog ? <><dt>Products</dt><dd>{target.promoted_object?.product_set_id ? 'From the ad set\u2019s product set' : 'From the product set chosen for the ad'}</dd></> : null}
-            </dl>
-            <p className="hint" style={{ marginBottom: 0 }}>The ad set&apos;s budget, audience and schedule stay as they are.</p>
+            <AdsetFacts adset={target} account={account} />
+            {isCatalog ? (
+              <div style={{ marginTop: 14 }}>
+                <ProductStrip
+                  setId={target.promoted_object?.product_set_id || form.adset.productSetId}
+                  label={target.promoted_object?.product_set_id ? 'Products from the ad set\u2019s product set' : 'Products from the product set chosen for the ad'}
+                />
+              </div>
+            ) : null}
+            <p className="hint" style={{ marginBottom: 0 }}>Your ad joins this ad set as is: its budget, audience and schedule don&apos;t change.</p>
           </div>
           <div className="sticky-bar">
             <span className="sticky-text">{summary}</span>
