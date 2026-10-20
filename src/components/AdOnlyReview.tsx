@@ -7,14 +7,24 @@ import { adsetFacts } from './AdsetFacts';
 import ProductStrip from './ProductStrip';
 import { Segmented } from './ui';
 
-/** Reverse journey: review and add the ad to an existing ad set. */
-export default function AdOnlyReview({ account, form, target, onClose, onDone }: {
-  account: AdAccount;
-  form: FormState;
-  target: AdsetLite;
-  onClose: () => void;
-  onDone: (r: LaunchResult) => void;
-}) {
+type Props = { account: AdAccount; form: FormState; target: AdsetLite; onClose: () => void; onDone: (r: LaunchResult) => void };
+
+export default function AdOnlyReview(props: Props) {
+  const { onClose } = props;
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
+  return (
+    <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="adonly-title" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal"><AdOnlyPanel {...props} /></div>
+    </div>
+  );
+}
+
+/** Review and add the ad to an existing ad set; works in a dialog or on a page. */
+export function AdOnlyPanel({ account, form, target, onClose, onDone, backLabel = 'Back', title = true }: Props & { backLabel?: string; title?: boolean }) {
   const [status, setStatus] = useState<'PAUSED' | 'ACTIVE'>('PAUSED');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<LaunchResult | null>(null);
@@ -22,12 +32,6 @@ export default function AdOnlyReview({ account, form, target, onClose, onDone }:
   const ad = form.ad;
   const isCatalog = ad.kind === 'CATALOG';
   const targetSet = target.promoted_object?.product_set_id;
-
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [busy, onClose]);
 
   const cta = CTAS.find((x) => x.key === ad.cta)?.label;
   const rows: [string, string][] = [
@@ -52,10 +56,8 @@ export default function AdOnlyReview({ account, form, target, onClose, onDone }:
   };
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="adonly-title" onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-      <div className="modal">
-        <h2 id="adonly-title">Review &amp; Launch</h2>
-        <p className="note">Your ad is added to the existing ad set. The ad set&apos;s budget, audience and schedule stay as they are.</p>
+    <>
+        {title ? <><h2 id="adonly-title">Review &amp; Launch</h2><p className="note">Your ad is added to the existing ad set. The ad set&apos;s budget, audience and schedule stay as they are.</p></> : null}
         <dl className="kv">{rows.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>
         {isCatalog ? <div style={{ marginTop: 12 }}><ProductStrip setId={targetSet || form.adset.productSetId} label="Products the ad can show" /></div> : null}
         <div className="field" style={{ marginTop: 18 }}>
@@ -71,12 +73,11 @@ export default function AdOnlyReview({ account, form, target, onClose, onDone }:
         ) : null}
         {error ? <div className="notice bad" style={{ marginTop: 16 }}>{error}</div> : null}
         <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>Back</button>
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>{backLabel}</button>
           <button type="button" className="btn-primary" onClick={go} disabled={busy}>
             {busy ? <><span className="spinner" style={{ borderTopColor: '#fff' }} /> Launching…</> : status === 'ACTIVE' ? 'Add ad' : 'Add ad paused'}
           </button>
         </div>
-      </div>
-    </div>
+    </>
   );
 }

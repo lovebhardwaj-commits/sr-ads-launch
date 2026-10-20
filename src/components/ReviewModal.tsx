@@ -9,7 +9,7 @@ import type { ProductSet } from './LaunchForm';
 import ProductStrip from './ProductStrip';
 import { Segmented } from './ui';
 
-export default function ReviewModal({ mode, account, form, ctx, campaign, source, productSets, pixels, onClose, onDone }: {
+type ReviewProps = {
   mode: Mode;
   account: AdAccount;
   form: FormState;
@@ -20,17 +20,28 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
   pixels: { id: string; name: string }[];
   onClose: () => void;
   onDone: (r: LaunchResult) => void;
-}) {
+};
+
+export default function ReviewModal(props: ReviewProps) {
+  const { onClose } = props;
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
+  return (
+    <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="review-title" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal"><ReviewPanel {...props} /></div>
+    </div>
+  );
+}
+
+/** Review rows, start status and launch, usable in a dialog or on a page (backLabel). */
+export function ReviewPanel({ mode, account, form, ctx, campaign, source, productSets, pixels, onClose, onDone, backLabel = 'Back to edit', title = true }: ReviewProps & { backLabel?: string; title?: boolean }) {
   const [status, setStatus] = useState<'PAUSED' | 'ACTIVE'>('PAUSED');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<LaunchResult | null>(null);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [busy, onClose]);
 
   const c = form.campaign;
   const a = form.adset;
@@ -130,10 +141,8 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
   const partial = !!(created?.campaign || created?.adset || created?.ads.length);
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="review-title" onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-      <div className="modal">
-        <h2 id="review-title">Review &amp; Launch</h2>
-        <p className="note">Check the details, then launch to Facebook.</p>
+    <>
+        {title ? <><h2 id="review-title">Review &amp; Launch</h2><p className="note">Check the details, then launch to Facebook.</p></> : null}
         <dl className="kv">
           {rows.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}
         </dl>
@@ -160,12 +169,11 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
         {error ? <div className="notice bad" style={{ marginTop: 16 }}>{error}</div> : null}
 
         <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>Back to edit</button>
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>{backLabel}</button>
           <button type="button" className="btn-primary" onClick={go} disabled={busy}>
             {busy ? <><span className="spinner" style={{ borderTopColor: '#fff' }} /> Launching…</> : status === 'ACTIVE' ? 'Launch' : 'Launch paused'}
           </button>
         </div>
-      </div>
-    </div>
+    </>
   );
 }
