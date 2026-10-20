@@ -30,7 +30,7 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
 
     case 'campaigns':
       return graph.list(`${act(q.get('account'))}/campaigns`, token, {
-        fields: 'id,name,objective,status,effective_status,daily_budget,lifetime_budget,bid_strategy,promoted_object,adsets.limit(0).summary(true)',
+        fields: 'id,name,objective,status,effective_status,daily_budget,lifetime_budget,bid_strategy,promoted_object,updated_time,adsets.limit(0).summary(true),insights.date_preset(last_7d){spend}',
         filtering: [{ field: 'effective_status', operator: 'IN', value: LIVE }],
         limit: 100,
       });
@@ -42,7 +42,7 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
       const filtering: any[] = [{ field: 'effective_status', operator: 'IN', value: q.get('archived') ? [...LIVE, 'ARCHIVED'] : LIVE }];
       if (search) filtering.push({ field: 'name', operator: 'CONTAIN', value: search });
       return graph.list(campaign ? `${campaign}/adsets` : `${act(q.get('account'))}/adsets`, token, {
-        fields: 'id,name,status,effective_status,campaign{id,name,objective,daily_budget,lifetime_budget,bid_strategy,promoted_object},optimization_goal,billing_event,destination_type,promoted_object,targeting,attribution_spec,daily_budget,lifetime_budget,bid_strategy,bid_amount,start_time,end_time,ads.limit(0).summary(true)',
+        fields: 'id,name,status,effective_status,campaign{id,name,objective,daily_budget,lifetime_budget,bid_strategy,promoted_object},optimization_goal,billing_event,destination_type,promoted_object,targeting,attribution_spec,daily_budget,lifetime_budget,bid_strategy,bid_amount,start_time,end_time,updated_time,ads.limit(0).summary(true),insights.date_preset(last_7d){spend,actions,purchase_roas}',
         filtering,
         limit: search ? 50 : 100,
       }, search ? 1 : 5);
@@ -104,7 +104,32 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
     }
 
     case 'product-sets':
-      return graph.list(`${need(q.get('catalog'), 'catalog')}/product_sets`, token, { fields: 'id,name,product_count', limit: 100 });
+      // A few product images per set, in the same request, so sets can be recognised at a glance.
+      return graph.list(`${need(q.get('catalog'), 'catalog')}/product_sets`, token, { fields: 'id,name,product_count,products.limit(4){id,image_url}', limit: 100 });
+
+    case 'set-health': {
+      // Out-of-stock count and a sample of product links opened to check they land on a real product page.
+      const set = need(q.get('set'), 'set');
+      const [oos, sample] = await Promise.all([
+        safe(() => graph.get<{ data: any[]; summary?: { total_count?: number } }>(`${set}/products`, token, { fields: 'id', filter: { availability: { eq: 'out of stock' } }, limit: 100, summary: true })),
+        graph.get<{ data: { id: string; name: string; url?: string }[] }>(`${set}/products`, token, { fields: 'id,name,url', limit: 8 }),
+      ]);
+      const outOfStock = 'unavailable' in oos ? null : (oos.summary?.total_count ?? oos.data.length);
+      const links = await Promise.all(sample.data.filter((p) => p.url).map(async (p) => {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 6000);
+        try {
+          let res = await fetch(p.url!, { method: 'HEAD', redirect: 'follow', signal: ctrl.signal, cache: 'no-store' });
+          if (res.status === 405 || res.status === 403) res = await fetch(p.url!, { method: 'GET', redirect: 'follow', signal: ctrl.signal, cache: 'no-store' });
+          const from = new URL(p.url!); const to = new URL(res.url || p.url!);
+          const toHome = from.pathname.replace(/\/$/, '') !== '' && (to.pathname === '/' || to.pathname === '');
+          return { id: p.id, name: p.name, url: p.url, status: res.status, ok: res.ok && !toHome, reason: !res.ok ? `Returns ${res.status}` : toHome ? 'Redirects to the homepage' : '' };
+        } catch (e) {
+          return { id: p.id, name: p.name, url: p.url, status: 0, ok: false, reason: (e as Error).name === 'AbortError' ? 'Took too long to load' : 'Could not be opened' };
+        } finally { clearTimeout(t); }
+      }));
+      return { outOfStock, links, noUrl: sample.data.filter((p) => !p.url).length };
+    }
 
     case 'products': {
       const set = q.get('set');

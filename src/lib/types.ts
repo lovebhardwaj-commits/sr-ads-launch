@@ -18,7 +18,13 @@ export interface CampaignLite {
   bid_strategy?: string;
   promoted_object?: { product_catalog_id?: string };
   adsets?: { summary?: { total_count?: number } };
+  updated_time?: string;
+  /** Last 7 days */
+  insights?: { data?: Insight[] };
 }
+
+/** Meta insights row (last 7 days): spend is in currency units, not minor units. */
+export interface Insight { spend?: string; actions?: { action_type: string; value: string }[]; purchase_roas?: { action_type: string; value: string }[] }
 
 export interface AdsetLite {
   id: string;
@@ -39,6 +45,8 @@ export interface AdsetLite {
   bid_amount?: number;
   start_time?: string;
   end_time?: string;
+  updated_time?: string;
+  insights?: { data?: Insight[] };
   ads?: { summary?: { total_count?: number } };
 }
 
