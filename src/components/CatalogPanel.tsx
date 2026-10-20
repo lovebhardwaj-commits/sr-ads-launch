@@ -131,8 +131,8 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
   const [showAll, setShowAll] = useState(false);
   // Product set list collapses to the chosen set; "Change" reopens it.
   const [pickingSet, setPickingSet] = useState(!productSetId);
-  // Any chosen set (picked here or defaulted to All products) collapses the list.
-  useEffect(() => { setPickingSet(!productSetId); }, [productSetId]);
+  // The list reopens if the choice is cleared (e.g. the catalog changed); it collapses only when someone picks a set.
+  useEffect(() => { if (!productSetId) setPickingSet(true); }, [productSetId]);
 
   const result = useMemo(() => (health.data ? readHealth(health.data, pixelId) : null), [health.data, pixelId]);
   useEffect(() => { onReady(!!result?.ready); }, [result, onReady]);
