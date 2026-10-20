@@ -31,14 +31,16 @@ const AD_TYPES: { key: AdType; title: string; text: string; icon: ReactNode }[] 
 const draftKey = (account: AdAccount) => `sr-adfirst-draft-${account.id}`;
 
 /**
- * "Start with an Ad" workspace: a step rail on the left, one step at a time in the middle, the live
- * preview and destination summary on the right, and an action bar that says what's blocking.
+ * "Start with an Ad" workspace: a sticky step bar on top (back, steps, continue), one step at a time in
+ * the editor, the live preview and destination summary on the right, and an action bar that says what's blocking.
  */
-export default function AdFirstWorkspace({ account, form, setForm, onDone }: {
+export default function AdFirstWorkspace({ account, form, setForm, onDone, onExit }: {
   account: AdAccount;
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   onDone: (r: LaunchResult, mode: Mode) => void;
+  /** Leave the workspace (back to all launch options) */
+  onExit: () => void;
 }) {
   const [step, setStep] = useState<Step>('AD');
   const [type, setType] = useState<AdType | null>(null);
@@ -152,19 +154,38 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone }: {
     { key: 'SETTINGS', title: 'Settings', sub: !dest ? 'Only for a new ad set or campaign' : needsSettings ? (dest.kind === 'NEW_CAMPAIGN' ? 'Campaign and ad set' : 'Ad set') : 'Not needed: existing ad set' },
     { key: 'REVIEW', title: 'Review', sub: 'Check and launch' },
   ];
+  // "Still needed" chips take you to the field: match its label, scroll, focus and flash it.
+  const jumpTo = (m: Missing) => {
+    const want = m.label.replace(/\s*\(.*\)\s*/, '').toLowerCase();
+    const labels = Array.from(document.querySelectorAll<HTMLElement>('.ws-main .field > .label, .ws-main .ws-section'));
+    const hit = labels.find((l) => (l.textContent || '').trim().toLowerCase() === want)
+      || labels.find((l) => (l.textContent || '').trim().toLowerCase().startsWith(want))
+      || labels.find((l) => (l.textContent || '').toLowerCase().includes(want));
+    const box = (hit?.closest('.field') || hit) as HTMLElement | null;
+    if (!box) { mainRef.current?.scrollIntoView({ behavior: 'smooth' }); return; }
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
+    setTimeout(() => box.querySelector<HTMLElement>('input:not([readonly]), textarea, select, button')?.focus({ preventScroll: true }), 350);
+  };
+
   const doneOf = (s: Step) => (s === 'AD' ? !adMissing.length : s === 'DEST' ? !!dest : s === 'SETTINGS' ? needsSettings && !settingsMissing.length : false);
+
+  const nextLabel = next === 'DEST' ? 'Choose destination' : next === 'SETTINGS' ? 'Set up ad set' : 'Review';
 
   return (
     <div className="ws">
-      {/* Step rail */}
-      <nav className="ws-rail" aria-label="Steps">
-        <ol>
+      {/* Step bar: back, the four steps, continue */}
+      <nav className="ws-bar" aria-label="Steps">
+        <button type="button" className="btn-ghost ws-back" onClick={() => (prev ? go(prev) : onExit())}>
+          <ArrowLeft size={14} /> {prev ? 'Back' : 'All launch options'}
+        </button>
+        <ol className="ws-steps">
           {STEPS.map((s, i) => {
             const skipped = s.key === 'SETTINGS' && !!dest && !needsSettings;
             const state = step === s.key ? 'current' : skipped ? 'skipped' : doneOf(s.key) ? 'done' : reach[s.key] ? 'open' : 'locked';
             return (
-              <li key={s.key}>
-                <button type="button" className={`ws-step ${state}`} disabled={!reach[s.key] || skipped} onClick={() => go(s.key)} aria-current={step === s.key ? 'step' : undefined}>
+              <li key={s.key} className={state}>
+                <button type="button" className={`ws-step ${state}`} disabled={!reach[s.key] || skipped} onClick={() => go(s.key)} aria-current={step === s.key ? 'step' : undefined} title={s.sub}>
                   <span className="no">{state === 'done' ? <Check size={12} strokeWidth={3} /> : i + 1}</span>
                   <span className="txt"><span className="t">{s.title}</span><span className="s">{s.sub}</span></span>
                 </button>
@@ -172,11 +193,17 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone }: {
             );
           })}
         </ol>
-        {restored ? (
-          <div className="ws-draft">Draft restored. <button type="button" className="btn-link" onClick={startFresh}>Start fresh</button></div>
-        ) : null}
+        {next ? (
+          <button type="button" className="btn-primary ws-next" disabled={blocking.length > 0} onClick={() => go(next)} title={blocking.length ? `Still needed: ${blocking.map((m) => m.label).join(', ')}` : undefined}>
+            {nextLabel} <ArrowRight size={14} />
+          </button>
+        ) : <span className="ws-next-spacer" />}
       </nav>
+      {restored ? (
+        <div className="ws-draft">Draft restored from your last visit. <button type="button" className="btn-link" onClick={startFresh}>Start fresh</button></div>
+      ) : null}
 
+      <div className="ws-body">
       {/* Current step */}
       <div className="ws-main" ref={mainRef}>
         {step === 'AD' ? (
@@ -277,13 +304,13 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone }: {
         {/* Action bar */}
         {step !== 'REVIEW' ? (
           <div className="sticky-bar ws-foot">
-            {prev ? <button type="button" className="btn-ghost" onClick={() => go(prev)}><ArrowLeft size={14} /> Back</button> : <span />}
+            <button type="button" className="btn-ghost" onClick={() => (prev ? go(prev) : onExit())}><ArrowLeft size={14} /> {prev ? 'Back' : 'All launch options'}</button>
             <span className="sticky-text">
-              {blocking.length ? <>Still needed: {blocking.map((m) => <span key={m.key} className="need">{m.label}</span>)}</> : <span className="ready">Ready to continue</span>}
+              {blocking.length ? <>Still needed: {blocking.map((m) => <button type="button" key={m.key} className="need" onClick={() => jumpTo(m)} title="Go to this field">{m.label}</button>)}</> : <span className="ready">Ready to continue</span>}
             </span>
             {next ? (
               <button type="button" className="btn-primary" disabled={blocking.length > 0} onClick={() => go(next)}>
-                {next === 'DEST' ? 'Choose destination' : next === 'SETTINGS' ? 'Set up' : 'Review'} <ArrowRight size={14} />
+                {nextLabel} <ArrowRight size={14} />
               </button>
             ) : null}
           </div>
@@ -311,6 +338,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone }: {
           </div>
         ) : null}
       </aside>
+      </div>
     </div>
   );
 }
