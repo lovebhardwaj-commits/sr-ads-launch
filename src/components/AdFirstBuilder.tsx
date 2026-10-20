@@ -22,12 +22,10 @@ export default function AdFirstBuilder({ account, form, setForm, onNext, onStart
   const catalogId = form.campaign.catalogId;
   const productSets = useAsync<{ id: string; name: string; product_count?: number }[]>(isCatalog && catalogId ? `sets-${catalogId}` : null, () => apiGet('product-sets', { catalog: catalogId }));
 
-  // Default product set: "All products" if present, else the biggest.
+  // A product set that doesn't belong to the loaded catalog is cleared; nothing is picked automatically.
   useEffect(() => {
     const sets = productSets.data;
-    if (!sets?.length || sets.some((s) => s.id === form.adset.productSetId)) return;
-    const all = sets.find((s) => /all products/i.test(s.name)) || [...sets].sort((x, y) => (y.product_count || 0) - (x.product_count || 0))[0];
-    setForm((f) => ({ ...f, adset: { ...f.adset, productSetId: all.id } }));
+    if (sets?.length && form.adset.productSetId && !sets.some((s) => s.id === form.adset.productSetId)) setForm((f) => ({ ...f, adset: { ...f.adset, productSetId: '' } }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productSets.data]);
 
@@ -47,7 +45,7 @@ export default function AdFirstBuilder({ account, form, setForm, onNext, onStart
   return (
     <>
       <button type="button" className="back" onClick={onStartOver}><ChevronLeft size={13} /> Start over</button>
-      <h2 className="section-title" style={{ marginTop: 0 }}>Start with an ad</h2>
+      <h2 className="section-title" style={{ marginTop: 0 }}><span className="step-no">1</span> Build your ad</h2>
       <p className="note">Build the ad first. Next, add it to an existing ad set, or create a new ad set or campaign for it. Catalog ads can also go into Sales campaigns without a catalog.</p>
 
       <div className="card">
@@ -84,7 +82,7 @@ export default function AdFirstBuilder({ account, form, setForm, onNext, onStart
       )}
 
       <div className="launch-bar">
-        <button type="button" className="btn-primary" disabled={missing.length > 0} onClick={onNext}>Next: choose where it goes</button>
+        <button type="button" className="btn-primary" disabled={missing.length > 0} onClick={onNext}>Done: choose where it goes</button>
         {missing.length ? <span className="missing">Still needed: {missing.map((m) => m.label).join(', ')}</span> : null}
       </div>
     </>
