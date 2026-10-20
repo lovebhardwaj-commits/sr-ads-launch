@@ -6,6 +6,7 @@ import {
 } from '@/lib/constants';
 import type { AdAccount, AdsetLite, CampaignLite, FlowContext, FormState, LaunchResult, Mode } from '@/lib/types';
 import type { ProductSet } from './LaunchForm';
+import ProductStrip from './ProductStrip';
 import { Segmented } from './ui';
 
 export default function ReviewModal({ mode, account, form, ctx, campaign, source, productSets, pixels, onClose, onDone }: {
@@ -136,6 +137,7 @@ export default function ReviewModal({ mode, account, form, ctx, campaign, source
         <dl className="kv">
           {rows.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}
         </dl>
+        {ctx.needsAd ? <div style={{ marginTop: 12 }}><ProductStrip setId={a.productSetId} label="Products the ad can show" /></div> : null}
 
         <div className="field" style={{ marginTop: 18 }}>
           <span className="label">Start as</span>

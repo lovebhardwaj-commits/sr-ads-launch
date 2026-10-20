@@ -95,3 +95,15 @@
 .sticky-bar .sticky-text { font-size: 12.5px; color: var(--ink-2); min-width: 0; }
 .sticky-bar.muted .sticky-text { color: var(--muted); }
 .sticky-bar .btn-primary { white-space: nowrap; flex: none; }
+
+/* Contained, scrollable lists (destination tree and pickers) */
+.tree { padding: 0; overflow: hidden; }
+.tree-head { padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--card-line); }
+.tree-scroll { max-height: 440px; overflow-y: auto; padding: 8px 14px 14px; display: flex; flex-direction: column; gap: 6px; overscroll-behavior: contain; }
+
+/* Product thumbnails in review */
+.product-strip .strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.product-strip figure { margin: 0; width: 76px; flex: none; }
+.product-strip img { width: 76px; height: 76px; object-fit: contain; background: #fff; border: 1px solid var(--card-line); border-radius: 8px; display: block; }
+.product-strip figcaption { font-size: 10.5px; color: var(--muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.product-strip .more { flex: none; align-self: center; font-size: 11.5px; color: var(--muted); padding: 0 6px; }
