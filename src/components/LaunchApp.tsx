@@ -42,6 +42,10 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
   const [campaign, setCampaign] = useState<CampaignLite | undefined>();
   const [source, setSource] = useState<AdsetLite | undefined>();
   const [fabOpen, setFabOpen] = useState(false);
+  // The ad from the last "Start with an Ad" launch, so it can be added to another ad set.
+  const [lastAd, setLastAd] = useState<{ form: FormState; adsetName: string } | null>(null);
+  const [repeatOf, setRepeatOf] = useState('');
+  const [wsKey, setWsKey] = useState(0);
 
   // Facebook appends "#_=_" to the URL after login; remove it.
   useEffect(() => {
@@ -59,6 +63,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
   const account = useMemo(() => accounts.data?.find((a) => a.id === accountId), [accounts.data, accountId]);
 
   const startOver = () => {
+    setLastAd(null); setRepeatOf('');
     setView({ kind: 'home' });
     setForm(defaultForm());
     setCampaign(undefined);
@@ -80,12 +85,32 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
     if (key === 'new') { setForm(defaultForm()); setView({ kind: 'form', mode: 'NEW' }); }
     if (key === 'existing') { setForm(defaultForm()); setView({ kind: 'pick-campaign', next: 'EXISTING' }); }
     if (key === 'duplicate') { setView({ kind: 'pick-adset' }); }
-    if (key === 'adfirst') { setForm(adFirstForm()); setView({ kind: 'ad-first' }); }
+    if (key === 'adfirst') { setForm(adFirstForm()); setRepeatOf(''); setView({ kind: 'ad-first' }); }
     window.scrollTo({ top: 0 });
   };
 
   const adsCount = source?.ads?.summary?.total_count ?? 0;
   const done = (result: LaunchResult, mode: Mode) => { setView({ kind: 'done', result, mode }); window.scrollTo({ top: 0 }); };
+  const doneAdFirst = (result: LaunchResult, mode: Mode) => {
+    setLastAd(result.ok ? { form, adsetName: result.created.adset?.name || '' } : null);
+    done(result, mode);
+  };
+  // Same ad, fresh destination: keep the ad (and its catalog and product set), reset campaign and ad set settings.
+  const repeatAd = () => {
+    if (!lastAd) return;
+    const f = adFirstForm();
+    const prev = lastAd.form;
+    setForm({
+      ...f,
+      campaign: { ...f.campaign, catalogEnabled: prev.campaign.catalogEnabled, catalogId: prev.campaign.catalogId, objective: prev.campaign.catalogEnabled ? 'OUTCOME_SALES' : f.campaign.objective },
+      adset: { ...f.adset, productSetId: prev.adset.productSetId },
+      ad: { ...prev.ad, adFirst: true },
+    });
+    setRepeatOf(lastAd.adsetName || 'the last ad set');
+    setWsKey((k) => k + 1);
+    setView({ kind: 'ad-first' });
+    window.scrollTo({ top: 0 });
+  };
 
   return (
     <div className={`content ${view.kind === 'ad-first' ? 'wide' : ''}`}>
@@ -193,7 +218,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
           </div>
         </>
       ) : view.kind === 'ad-first' ? (
-        <AdFirstWorkspace key={account.id} account={account} form={form} setForm={setForm} onDone={done} onExit={startOver} />
+        <AdFirstWorkspace key={`${account.id}-${wsKey}`} account={account} form={form} setForm={setForm} onDone={doneAdFirst} onExit={startOver} repeatOf={repeatOf || undefined} />
       ) : view.kind === 'form' ? (
         <LaunchForm
           key={`${view.mode}-${campaign?.id || ''}-${source?.id || ''}`}
@@ -207,7 +232,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
           onDone={(result) => done(result, view.mode)}
         />
       ) : view.kind === 'done' ? (
-        <ResultView result={view.result} account={account} onAgain={startOver} />
+        <ResultView result={view.result} account={account} onAgain={startOver} onRepeat={lastAd && view.result.ok ? repeatAd : undefined} />
       ) : null}
 
       <LegalLinks style={{ marginTop: 48 }} />

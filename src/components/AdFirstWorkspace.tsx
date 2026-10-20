@@ -34,16 +34,18 @@ const draftKey = (account: AdAccount) => `sr-adfirst-draft-${account.id}`;
  * "Start with an Ad" workspace: a sticky step bar on top (back, steps, continue), one step at a time in
  * the editor, the live preview and destination summary on the right, and an action bar that says what's blocking.
  */
-export default function AdFirstWorkspace({ account, form, setForm, onDone, onExit }: {
+export default function AdFirstWorkspace({ account, form, setForm, onDone, onExit, repeatOf }: {
   account: AdAccount;
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   onDone: (r: LaunchResult, mode: Mode) => void;
   /** Leave the workspace (back to all launch options) */
   onExit: () => void;
+  /** Reusing the ad just launched: start on Destination; name of the ad set it went into */
+  repeatOf?: string;
 }) {
-  const [step, setStep] = useState<Step>('AD');
-  const [type, setType] = useState<AdType | null>(null);
+  const [step, setStep] = useState<Step>(repeatOf ? 'DEST' : 'AD');
+  const [type, setType] = useState<AdType | null>(repeatOf ? (form.ad.kind === 'CATALOG' || form.ad.kind === 'POST' ? form.ad.kind : 'UPLOAD') : null);
   const [dest, setDest] = useState<Destination | null>(null);
   const [settingsMissing, setSettingsMissing] = useState<Missing[]>([{ key: 'settings', label: 'Ad set settings' }]);
   const [restored, setRestored] = useState(false);
@@ -52,6 +54,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
 
   // Restore a saved draft once; then save as things change.
   useEffect(() => {
+    if (repeatOf) { loaded.current = true; return; }
     try {
       const raw = localStorage.getItem(draftKey(account));
       if (raw) {
@@ -163,6 +166,8 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
       || labels.find((l) => (l.textContent || '').toLowerCase().includes(want));
     const box = (hit?.closest('.field') || hit) as HTMLElement | null;
     if (!box) { mainRef.current?.scrollIntoView({ behavior: 'smooth' }); return; }
+    // Open any collapsed Advanced section the field sits in.
+    let d = box.closest('details'); while (d) { d.setAttribute('open', ''); d = d.parentElement?.closest('details') || null; }
     box.scrollIntoView({ behavior: 'smooth', block: 'center' });
     box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
     setTimeout(() => box.querySelector<HTMLElement>('input:not([readonly]), textarea, select, button')?.focus({ preventScroll: true }), 350);
@@ -199,6 +204,9 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
           </button>
         ) : <span className="ws-next-spacer" />}
       </nav>
+      {repeatOf ? (
+        <div className="ws-draft">Same ad as the one you just added to <b>{repeatOf}</b>. Pick another ad set, or edit the ad first.</div>
+      ) : null}
       {restored ? (
         <div className="ws-draft">Draft restored from your last visit. <button type="button" className="btn-link" onClick={startFresh}>Start fresh</button></div>
       ) : null}

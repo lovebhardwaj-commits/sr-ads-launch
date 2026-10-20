@@ -2,7 +2,7 @@
 import { CheckCircle2, ExternalLink } from 'lucide-react';
 import type { AdAccount, LaunchResult } from '@/lib/types';
 
-export default function ResultView({ result, account, onAgain }: { result: LaunchResult; account: AdAccount; onAgain: () => void }) {
+export default function ResultView({ result, account, onAgain, onRepeat }: { result: LaunchResult; account: AdAccount; onAgain: () => void; /** Same ad into another ad set */ onRepeat?: () => void }) {
   const act = account.account_id || account.id.replace('act_', '');
   const base = 'https://adsmanager.facebook.com/adsmanager/manage';
   const c = result.created;
@@ -32,7 +32,8 @@ export default function ResultView({ result, account, onAgain }: { result: Launc
           <a className="btn-primary" href={link} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
             Review {firstAd ? 'ad' : c.adset ? 'ad set' : 'campaign'} in Ads Manager <ExternalLink size={13} />
           </a>
-          <button type="button" className="btn-ghost" onClick={onAgain}>Launch another</button>
+          {onRepeat ? <button type="button" className="btn-ghost" onClick={onRepeat}>Add this ad to another ad set</button> : null}
+          <button type="button" className="btn-ghost" onClick={onAgain}>{onRepeat ? 'Start a new ad' : 'Launch another'}</button>
         </div>
         <div className="hint" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 12 }}>
           <span>Edit in Ads Manager:</span>
