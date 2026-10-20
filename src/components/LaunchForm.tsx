@@ -20,7 +20,7 @@ export interface ProductSet { id: string; name: string; product_count?: number }
 
 const RETARGET_DAYS = [3, 7, 14, 30, 60, 90, 180].map((d) => ({ key: String(d), label: `${d} days` }));
 
-export default function LaunchForm({ mode, account, form, setForm, campaign, source, onStartOver, onEditAd, onDone }: {
+export default function LaunchForm({ mode, account, form, setForm, campaign, source, onStartOver, onEditAd, onDone, embedded = false, summary }: {
   mode: Mode;
   account: AdAccount;
   form: FormState;
@@ -31,6 +31,9 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
   /** Reverse journey: go back to the ad built first */
   onEditAd?: () => void;
   onDone: (r: LaunchResult) => void;
+  /** Rendered inside "Start with an Ad": no Start over, no Ad section (the ad is shown above), sticky action bar */
+  embedded?: boolean;
+  summary?: React.ReactNode;
 }) {
   const ctx = buildContext(mode, form, campaign, source);
   const c = form.campaign;
@@ -69,12 +72,10 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goal.key]);
 
-  // Default product set: "All products" if present, else the biggest.
+  // A product set that doesn't belong to the loaded catalog is cleared; nothing is picked automatically.
   useEffect(() => {
     const sets = productSets.data;
-    if (!sets?.length || sets.some((s) => s.id === a.productSetId)) return;
-    const all = sets.find((s) => /all products/i.test(s.name)) || [...sets].sort((x, y) => (y.product_count || 0) - (x.product_count || 0))[0];
-    up('adset', { productSetId: all.id });
+    if (sets?.length && a.productSetId && !sets.some((s) => s.id === a.productSetId)) up('adset', { productSetId: '' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productSets.data]);
 
@@ -143,9 +144,9 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
 
   return (
     <>
-      <button type="button" className="back" onClick={onStartOver}><ChevronLeft size={13} /> Start over</button>
+      {!embedded ? <button type="button" className="back" onClick={onStartOver}><ChevronLeft size={13} /> Start over</button> : null}
 
-      {!ctx.needsCampaign && campaign ? (
+      {!embedded && !ctx.needsCampaign && campaign ? (
         <p className="note">
           Attaching to existing campaign: <span className="strong">{campaign.name}</span> ({objectiveLabel(campaign.objective)}{ctx.isCatalog ? ', catalog' : ''})
         </p>
@@ -436,8 +437,8 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
       </div>
 
       {/* ── Ad ── */}
-      <h2 className="section-title">Ad</h2>
-      {form.ad.adFirst ? (
+      {!embedded ? <h2 className="section-title">Ad</h2> : null}
+      {form.ad.adFirst && !embedded ? (
         <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
             {form.ad.imageUrl || form.ad.postPreview ? <img src={form.ad.imageUrl || form.ad.postPreview} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 8 }} /> : null}
@@ -507,10 +508,17 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
         </>
       ) : null}
 
-      <div className="launch-bar">
-        <button type="button" className="btn-primary" disabled={missing.length > 0} onClick={() => setReviewing(true)}>Review &amp; Launch</button>
-        {missing.length ? <span className="missing">Still needed: {missing.map((m) => m.label).join(', ')}</span> : null}
-      </div>
+      {embedded ? (
+        <div className="sticky-bar">
+          <span className="sticky-text">{summary}{missing.length ? <span className="missing" style={{ display: 'block' }}>Still needed: {missing.map((m) => m.label).join(', ')}</span> : null}</span>
+          <button type="button" className="btn-primary" disabled={missing.length > 0} onClick={() => setReviewing(true)}>Review &amp; Launch</button>
+        </div>
+      ) : (
+        <div className="launch-bar">
+          <button type="button" className="btn-primary" disabled={missing.length > 0} onClick={() => setReviewing(true)}>Review &amp; Launch</button>
+          {missing.length ? <span className="missing">Still needed: {missing.map((m) => m.label).join(', ')}</span> : null}
+        </div>
+      )}
 
       {reviewing ? (
         <ReviewModal
