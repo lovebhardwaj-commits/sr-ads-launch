@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '@/lib/client-api';
 import { currencySymbol, fromMinorUnits, objectiveLabel } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
-import type { AdAccount, AdsetLite, CampaignLite } from '@/lib/types';
+import type { AdAccount, AdsetLite, CampaignLite, Insight } from '@/lib/types';
 import { type AdFit, adsetFit, budgetText, campaignFit, statusLabel } from './Pickers';
 import { Loading } from './ui';
 
@@ -33,6 +33,33 @@ export function adsetBudget(a: AdsetLite, currency: string): string {
   return 'Campaign budget';
 }
 
+/** Last-7-day spend, purchases and ROAS from an insights field. */
+export function perf(ins?: { data?: Insight[] }) {
+  const r = ins?.data?.[0];
+  const spend = Number(r?.spend || 0);
+  const purchases = Number(r?.actions?.find((a) => ['omni_purchase', 'purchase', 'offsite_conversion.fb_pixel_purchase'].includes(a.action_type))?.value || 0);
+  const roas = Number(r?.purchase_roas?.[0]?.value || 0);
+  return { spend, purchases, roas };
+}
+export function perfText(p: { spend: number; purchases: number; roas: number }, currency: string, full = true): string {
+  if (!p.spend) return 'No spend in the last 7 days';
+  const parts = [`${currencySymbol(currency)}${p.spend.toLocaleString('en-IN', { maximumFractionDigits: 0 })} spent`];
+  if (full && p.purchases) parts.push(`${p.purchases.toLocaleString('en-IN')} ${p.purchases === 1 ? 'purchase' : 'purchases'}`);
+  if (full && p.roas) parts.push(`${p.roas.toFixed(2)} ROAS`);
+  return `${parts.join(' · ')} (7d)`;
+}
+
+// Running first, then by last-7-day spend, then most recently edited.
+const STATUS_RANK: Record<string, number> = { ACTIVE: 0, WITH_ISSUES: 1, IN_PROCESS: 1, CAMPAIGN_PAUSED: 2, ADSET_PAUSED: 2, PAUSED: 3 };
+function byActivity(x: { effective_status?: string; status?: string; updated_time?: string; insights?: { data?: Insight[] } }, y: typeof x) {
+  const rx = STATUS_RANK[x.effective_status || x.status || ''] ?? 4;
+  const ry = STATUS_RANK[y.effective_status || y.status || ''] ?? 4;
+  if (rx !== ry) return rx - ry;
+  const sx = perf(x.insights).spend; const sy = perf(y.insights).spend;
+  if (sx !== sy) return sy - sx;
+  return String(y.updated_time || '').localeCompare(String(x.updated_time || ''));
+}
+
 function AdsetRow({ a, why, selected, onPick, currency }: { a: AdsetLite; why: string; selected: boolean; onPick: () => void; currency: string }) {
   const n = a.ads?.summary?.total_count ?? 0;
   return (
@@ -40,7 +67,7 @@ function AdsetRow({ a, why, selected, onPick, currency }: { a: AdsetLite; why: s
       <span className="radio" aria-hidden />
       <span className="t-name">{a.name}</span>
       {a.promoted_object?.product_set_id ? <span className="badge coral">Catalog</span> : null}
-      <span className="t-meta">{[adsetBudget(a, currency), statusLabel(a.effective_status || a.status), `${n} ${n === 1 ? 'ad' : 'ads'}`, audienceText(a.targeting), why].filter(Boolean).join(' · ')}</span>
+      <span className="t-meta">{[adsetBudget(a, currency), statusLabel(a.effective_status || a.status), perfText(perf(a.insights), currency), `${n} ${n === 1 ? 'ad' : 'ads'}`, audienceText(a.targeting), why].filter(Boolean).join(' · ')}</span>
     </button>
   );
 }
@@ -51,7 +78,7 @@ function CampaignChildren({ account, c, blocked, fit, isSel, onChange, fitsOnly 
   isSel: (d: Destination) => boolean; onChange: (d: Destination) => void; fitsOnly: boolean;
 }) {
   const res = useAsync<AdsetLite[]>(`adsets-c-${c.id}`, () => apiGet('adsets', { account: account.id, campaign: c.id }));
-  const all = res.data || [];
+  const all = [...(res.data || [])].sort(byActivity);
   const shown = fitsOnly ? all.filter((a) => !adsetFit(a, fit)) : all;
   const hidden = all.length - shown.length;
   return (
@@ -76,7 +103,7 @@ function CampaignChildren({ account, c, blocked, fit, isSel, onChange, fitsOnly 
 /**
  * Ads Manager-style tree in a fixed-height card: campaigns load first; a campaign's ad sets load when it
  * is expanded; search looks up campaigns locally and ad sets by name on Meta's side. By default only
- * campaigns and ad sets the ad fits are shown.
+ * campaigns and ad sets the ad fits are shown, running first, then by last-7-day spend.
  */
 export default function DestinationTree({ account, fit, value, onChange }: {
   account: AdAccount;
@@ -97,7 +124,7 @@ export default function DestinationTree({ account, fit, value, onChange }: {
   const allRows = useMemo(() => (campaigns.data || [])
     .map((c) => ({ c, blocked: campaignFit(c, fit), hits: (searching ? (found.data || []).filter((a) => a.campaign?.id === c.id) : []).filter((a) => !fitsOnly || !adsetFit(a, fit)) }))
     .filter((r) => !searching || r.c.name.toLowerCase().includes(s) || r.c.id.includes(s) || r.hits.length > 0)
-    .sort((x, y) => Number(!!x.blocked) - Number(!!y.blocked)), [campaigns.data, fit, searching, found.data, s, fitsOnly]);
+    .sort((x, y) => Number(!!x.blocked) - Number(!!y.blocked) || byActivity(x.c, y.c)), [campaigns.data, fit, searching, found.data, s, fitsOnly]);
   const rows = fitsOnly ? allRows.filter((r) => !r.blocked) : allRows;
   const hiddenCampaigns = allRows.length - rows.length;
 
@@ -116,7 +143,7 @@ export default function DestinationTree({ account, fit, value, onChange }: {
           <span className="t-meta">Create a campaign and ad set for this ad{fit.isCatalog ? ' (with your catalog)' : ''}</span>
         </button>
         <div className="tree-filter">
-          <span>{campaigns.data ? `${rows.length} ${rows.length === 1 ? 'campaign' : 'campaigns'}${fitsOnly ? ' this ad fits' : ''}` : ''}</span>
+          <span>{campaigns.data ? `${rows.length} ${rows.length === 1 ? 'campaign' : 'campaigns'}${fitsOnly ? ' this ad fits' : ''} · running first, then by 7-day spend` : ''}</span>
           {hiddenCampaigns || !fitsOnly ? (
             <button type="button" className="btn-link" onClick={() => setFitsOnly(!fitsOnly)}>
               {fitsOnly ? `Show ${hiddenCampaigns} that don\u2019t fit` : 'Only show where this ad fits'}
@@ -139,7 +166,7 @@ export default function DestinationTree({ account, fit, value, onChange }: {
                 {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <span className="t-name">{c.name}</span>
                 <span className={`badge ${catalog ? 'coral' : 'grey'}`}>{catalog ? 'Catalog' : 'Normal'}</span>
-                <span className="t-meta">{[objectiveLabel(c.objective), budgetText(c, account.currency), statusLabel(c.effective_status || c.status), count != null ? `${count} ${count === 1 ? 'ad set' : 'ad sets'}` : '', blocked].filter(Boolean).join(' · ')}</span>
+                <span className="t-meta">{[objectiveLabel(c.objective), budgetText(c, account.currency), statusLabel(c.effective_status || c.status), perfText(perf(c.insights), account.currency, false), count != null ? `${count} ${count === 1 ? 'ad set' : 'ad sets'}` : '', blocked].filter(Boolean).join(' · ')}</span>
               </button>
               {expanded ? (
                 <CampaignChildren account={account} c={c} blocked={blocked} fit={fit} isSel={isSel} onChange={onChange} fitsOnly={fitsOnly} />

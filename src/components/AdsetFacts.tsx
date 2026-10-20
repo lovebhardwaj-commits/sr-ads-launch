@@ -2,7 +2,7 @@
 import { Fragment } from 'react';
 import { BID_STRATEGIES, objectiveLabel } from '@/lib/constants';
 import type { AdAccount, AdsetLite } from '@/lib/types';
-import { adsetBudget, audienceText } from './DestinationTree';
+import { adsetBudget, audienceText, perf, perfText } from './DestinationTree';
 import { budgetText, statusLabel } from './Pickers';
 
 const date = (s?: string) => (s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
@@ -20,6 +20,7 @@ export function adsetFacts(a: AdsetLite, account: AdAccount): [string, string][]
     ['Bid strategy', BID_STRATEGIES.find((b) => b.key === bidKey)?.label || (bidKey ? statusLabel(bidKey) : 'Highest volume')],
     ['Schedule', a.start_time ? `${date(a.start_time)} – ${a.end_time ? date(a.end_time) : 'ongoing'}` : 'Ongoing'],
     ['Audience', audienceText(a.targeting) || 'As set on the ad set'],
+    ['Last 7 days', perfText(perf(a.insights), account.currency).replace(' (7d)', '')],
     ['Ads', `${n} now, ${n + 1} after adding yours`],
   ];
 }
