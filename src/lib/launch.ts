@@ -119,7 +119,9 @@ export function adsetParams(form: FormState, ctx: FlowContext, currency: string,
   } else if (goal.pixel) {
     p.promoted_object = { pixel_id: a.pixelId, custom_event_type: goal.fixedEvent || a.event };
   }
-  if (!ctx.isCatalog && goal.destination) p.destination_type = goal.destination;
+  // Catalog ad sets send people to the website explicitly; left empty, Meta may default to the app.
+  if (ctx.isCatalog) p.destination_type = 'WEBSITE';
+  else if (goal.destination) p.destination_type = goal.destination;
   if (goal.attribution) p.attribution_spec = (ATTRIBUTION.find((x) => x.key === a.attribution) || ATTRIBUTION[0]).spec;
 
   if (ctx.adsetBudget) {
@@ -157,6 +159,8 @@ export function creativeParams(form: FormState) {
     name: `${ad.name.trim() || form.adset.name.trim()} - Catalog creative`,
     product_set_id: form.adset.productSetId,
     object_story_spec: story,
+    // Destination: website only, or the app via the catalog's deep links with the website as backup.
+    applink_treatment: ad.destination === 'APP_WEB' ? 'deeplink_with_web_fallback' : 'web_only',
     ...(urlTags ? { url_tags: urlTags } : {}),
     // Show product videos from the catalog where products have them.
     ...(ad.media === 'VIDEO' ? { degrees_of_freedom_spec: { creative_features_spec: { media_type_automation: { enroll_status: 'OPT_IN' } } } } : {}),
@@ -206,14 +210,16 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
       const target = req.targetAdset;
       if (!target) throw new GraphError({ message: 'No ad set selected.' });
       const targetSet = target.promoted_object?.product_set_id;
+      const isCatalogAd = form.ad.kind === 'CATALOG';
       step = 'creative';
-      const params = targetSet
-        ? creativeParams({ ...form, adset: { ...form.adset, productSetId: targetSet } })
+      // Catalog ad: the ad set's product set if it has one, else the product set chosen for the ad.
+      const params = isCatalogAd
+        ? creativeParams({ ...form, adset: { ...form.adset, productSetId: targetSet || form.adset.productSetId } })
         : standardCreativeParams(form);
       const creative = await graph.post<{ id: string }>(`${act}/adcreatives`, token, params);
       result.created.creative = { id: creative.id };
       step = 'ad';
-      const adName = form.ad.name.trim() || `${target.name} - ${targetSet ? 'Catalog ad' : 'Ad'}`;
+      const adName = form.ad.name.trim() || `${target.name} - ${isCatalogAd ? 'Catalog ad' : 'Ad'}`;
       const ad = await graph.post<{ id: string }>(`${act}/ads`, token, { name: adName, adset_id: target.id, creative: { creative_id: creative.id }, status: 'PAUSED' });
       result.created.ads.push({ id: ad.id, name: adName });
       result.created.adset = { id: target.id, name: target.name };
