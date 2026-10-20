@@ -50,7 +50,9 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
     !retarget && (a.audienceType === 'SAVED' || a.audienceType === 'INTEREST') ? `saved-${account.id}` : null,
     () => apiGet('saved-audiences', { account: account.id }),
   );
-  const productSets = useAsync<ProductSet[]>(ctx.isCatalog && ctx.catalogId ? `sets-${ctx.catalogId}` : null, () => apiGet('product-sets', { catalog: ctx.catalogId }));
+  // Campaign catalog, or the ad's own catalog when a catalog ad goes into a campaign without one.
+  const setsCatalogId = ctx.isCatalog ? ctx.catalogId : ctx.adLevelCatalog ? c.catalogId : '';
+  const productSets = useAsync<ProductSet[]>(setsCatalogId ? `sets-${setsCatalogId}` : null, () => apiGet('product-sets', { catalog: setsCatalogId }));
 
   // Goals follow the objective (and catalog). Keep the selection valid.
   const goals = goalsFor(ctx.objective, ctx.isCatalog);
@@ -442,8 +444,8 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             <div style={{ minWidth: 0 }}>
               <div className="strong">{form.ad.name || 'Your ad'}</div>
               <div className="hint" style={{ marginTop: 2 }}>
-                {ctx.isCatalog
-                  ? `Catalog ad · ${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} · products from the product set above`
+                {ctx.isCatalog || ctx.adLevelCatalog
+                  ? `Catalog ad · ${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} · ${ctx.adLevelCatalog ? `products from ${setOptions.find((s) => s.key === a.productSetId)?.label || 'the chosen product set'}` : 'products from the product set above'}`
                   : form.ad.kind === 'POST' ? `Existing ${form.ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post` : `Image ad${form.ad.imageName ? ` · ${form.ad.imageName}` : ''}`}
               </div>
             </div>
@@ -477,7 +479,30 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
           {ctx.isCatalog ? (
             <AdSection form={form} setAd={(p) => up('ad', p)} productSetId={a.productSetId} catalogId={ctx.catalogId} />
           ) : (
-            <StandardAdSection form={form} setAd={(p) => up('ad', p)} accountId={account.id} allowSkip={!ctx.isDup} />
+            <>
+              <StandardAdSection form={form} setAd={(p) => up('ad', p)} accountId={account.id} allowSkip={!ctx.isDup} allowCatalog={ctx.objective === 'OUTCOME_SALES'} />
+              {ctx.adLevelCatalog ? (
+                <>
+                  <h2 className="section-title">Catalog for this ad</h2>
+                  <CatalogPanel
+                    account={account}
+                    catalogId={c.catalogId}
+                    locked={false}
+                    onCatalog={(id) => { up('campaign', { catalogId: id }); up('adset', { productSetId: '' }); }}
+                    productSets={productSets.data || []}
+                    productSetsLoading={productSets.loading}
+                    productSetsError={productSets.error}
+                    productSetId={a.productSetId}
+                    onProductSet={(id) => up('adset', { productSetId: id })}
+                    pixelId=""
+                    onReady={() => undefined}
+                    showHealth={false}
+                  />
+                  <h2 className="section-title">Catalog ad</h2>
+                  <AdSection key="adlevel" form={form} setAd={(p) => up('ad', p)} productSetId={a.productSetId} catalogId={c.catalogId} />
+                </>
+              ) : null}
+            </>
           )}
         </>
       ) : null}
