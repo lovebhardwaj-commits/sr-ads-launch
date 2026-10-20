@@ -20,7 +20,7 @@ export interface ProductSet { id: string; name: string; product_count?: number }
 
 const RETARGET_DAYS = [3, 7, 14, 30, 60, 90, 180].map((d) => ({ key: String(d), label: `${d} days` }));
 
-export default function LaunchForm({ mode, account, form, setForm, campaign, source, onStartOver, onEditAd, onDone, embedded = false, summary }: {
+export default function LaunchForm({ mode, account, form, setForm, campaign, source, onStartOver, onEditAd, onDone, embedded = false, summary, onMissing }: {
   mode: Mode;
   account: AdAccount;
   form: FormState;
@@ -34,6 +34,8 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
   /** Rendered inside "Start with an Ad": no Start over, no Ad section (the ad is shown above), sticky action bar */
   embedded?: boolean;
   summary?: React.ReactNode;
+  /** Host shows its own action bar and review: receive what's still needed, render no bar or dialog here */
+  onMissing?: (missing: { key: string; label: string }[]) => void;
 }) {
   const ctx = buildContext(mode, form, campaign, source);
   const c = form.campaign;
@@ -89,6 +91,10 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
     () => validate(form, ctx, { goalNeedsPixel: !!goal.pixel, bidNeeds: ctx.needsCampaign ? bid.needs : undefined, catalogReady }),
     [form, ctx, goal.pixel, bid.needs, catalogReady],
   );
+
+  // Report only when the list itself changes (the array is rebuilt every render).
+  const missingKey = missing.map((m) => m.key).join('|');
+  useEffect(() => { onMissing?.(missing); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [missingKey]);
 
   // Budget can live at either level; an amount at one level disables the other.
   const campaignBudgetReason = b.level === 'ADSET' && b.amount ? 'Using an ad set budget. Clear it to use a campaign budget instead.' : undefined;
@@ -508,7 +514,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
         </>
       ) : null}
 
-      {embedded ? (
+      {onMissing ? null : embedded ? (
         <div className="sticky-bar">
           <span className="sticky-text">{summary}{missing.length ? <span className="missing" style={{ display: 'block' }}>Still needed: {missing.map((m) => m.label).join(', ')}</span> : null}</span>
           <button type="button" className="btn-primary" disabled={missing.length > 0} onClick={() => setReviewing(true)}>Review &amp; Launch</button>
