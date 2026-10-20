@@ -17,6 +17,7 @@ export interface CampaignLite {
   lifetime_budget?: string;
   bid_strategy?: string;
   promoted_object?: { product_catalog_id?: string };
+  adsets?: { summary?: { total_count?: number } };
 }
 
 export interface AdsetLite {
@@ -36,6 +37,8 @@ export interface AdsetLite {
   lifetime_budget?: string;
   bid_strategy?: string;
   bid_amount?: number;
+  start_time?: string;
+  end_time?: string;
   ads?: { summary?: { total_count?: number } };
 }
 

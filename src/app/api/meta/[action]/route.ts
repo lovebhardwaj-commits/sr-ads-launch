@@ -30,17 +30,23 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
 
     case 'campaigns':
       return graph.list(`${act(q.get('account'))}/campaigns`, token, {
-        fields: 'id,name,objective,status,effective_status,daily_budget,lifetime_budget,bid_strategy,promoted_object',
+        fields: 'id,name,objective,status,effective_status,daily_budget,lifetime_budget,bid_strategy,promoted_object,adsets.limit(0).summary(true)',
         filtering: [{ field: 'effective_status', operator: 'IN', value: LIVE }],
         limit: 100,
       });
 
-    case 'adsets':
-      return graph.list(`${act(q.get('account'))}/adsets`, token, {
-        fields: 'id,name,status,effective_status,campaign{id,name,objective,daily_budget,lifetime_budget,promoted_object},optimization_goal,billing_event,destination_type,promoted_object,targeting,attribution_spec,daily_budget,lifetime_budget,bid_strategy,bid_amount,ads.limit(0).summary(true)',
-        filtering: [{ field: 'effective_status', operator: 'IN', value: q.get('archived') ? [...LIVE, 'ARCHIVED'] : LIVE }],
-        limit: 100,
-      });
+    case 'adsets': {
+      // One campaign's ad sets (loaded when it is expanded), a name search, or the whole account.
+      const campaign = q.get('campaign');
+      const search = (q.get('search') || '').trim();
+      const filtering: any[] = [{ field: 'effective_status', operator: 'IN', value: q.get('archived') ? [...LIVE, 'ARCHIVED'] : LIVE }];
+      if (search) filtering.push({ field: 'name', operator: 'CONTAIN', value: search });
+      return graph.list(campaign ? `${campaign}/adsets` : `${act(q.get('account'))}/adsets`, token, {
+        fields: 'id,name,status,effective_status,campaign{id,name,objective,daily_budget,lifetime_budget,bid_strategy,promoted_object},optimization_goal,billing_event,destination_type,promoted_object,targeting,attribution_spec,daily_budget,lifetime_budget,bid_strategy,bid_amount,start_time,end_time,ads.limit(0).summary(true)',
+        filtering,
+        limit: search ? 50 : 100,
+      }, search ? 1 : 5);
+    }
 
     case 'pixels':
       return graph.list(`${act(q.get('account'))}/adspixels`, token, { fields: 'id,name', limit: 100 });
