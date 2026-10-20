@@ -18,6 +18,27 @@ const statusLabel = (s?: string) => (s || '').replace(/_/g, ' ').toLowerCase().r
 /** Reverse journey: what the ad built first needs from its destination. */
 export interface AdFit { isCatalog: boolean; catalogId: string }
 
+/** Why a campaign can't take the ad ('' when it can). */
+export function campaignFit(c: CampaignLite, fit: AdFit): string {
+  const catalog = c.promoted_object?.product_catalog_id;
+  if (fit.isCatalog && catalog && catalog !== fit.catalogId) return 'Uses a different catalog';
+  if (fit.isCatalog && !catalog && normalizeObjective(c.objective) !== 'OUTCOME_SALES') return 'Catalog ads need a Sales campaign';
+  if (!fit.isCatalog && catalog) return 'Catalog campaigns need a catalog ad';
+  return '';
+}
+
+/** Why an ad set can't take the ad ('' when it can). */
+export function adsetFit(a: AdsetLite, fit: AdFit): string {
+  const set = a.promoted_object?.product_set_id;
+  if (fit.isCatalog) {
+    if (set) return a.campaign?.promoted_object?.product_catalog_id === fit.catalogId ? '' : 'Uses a different catalog';
+    return normalizeObjective(a.campaign?.objective) === 'OUTCOME_SALES' ? '' : 'Catalog ads need a Sales campaign';
+  }
+  return set ? 'Catalog ad sets need a catalog ad' : '';
+}
+
+export { budgetText, statusLabel };
+
 export function CampaignPicker({ account, title, source, adFit, onPick }: {
   account: AdAccount;
   title: string;
@@ -42,11 +63,7 @@ export function CampaignPicker({ account, title, source, adFit, onPick }: {
         else if (sourceIsCatalog && catalog !== sourceCatalog) blocked = 'Needs the same catalog as the original';
         else if (!sourceIsCatalog && catalog) blocked = 'Catalog campaigns only take catalog ad sets';
       }
-      if (adFit) {
-        if (adFit.isCatalog && catalog && catalog !== adFit.catalogId) blocked = 'Uses a different catalog';
-        else if (adFit.isCatalog && !catalog && normalizeObjective(c.objective) !== 'OUTCOME_SALES') blocked = 'Catalog ads need a Sales campaign';
-        else if (!adFit.isCatalog && catalog) blocked = 'Catalog campaigns need a catalog ad';
-      }
+      if (adFit) blocked = campaignFit(c, adFit) || blocked;
       return { c, catalog, blocked };
     })
     .sort((a, b) => Number(!!a.blocked) - Number(!!b.blocked)), [res.data, q, source, sourceCatalog, sourceObjective, sourceIsCatalog, adFit]);
@@ -84,15 +101,7 @@ export function AdsetPicker({ account, onPick, onCreateNew, title = 'Pick the ad
   const [archived, setArchived] = useState(false);
   const res = useAsync<AdsetLite[]>(`adsets-${account.id}-${archived}`, () => apiGet('adsets', { account: account.id, archived: archived ? '1' : undefined }));
   const [q, setQ] = useState('');
-  const blockedFor = (a: AdsetLite) => {
-    if (!adFit) return '';
-    const set = a.promoted_object?.product_set_id;
-    if (adFit.isCatalog) {
-      if (set) return a.campaign?.promoted_object?.product_catalog_id === adFit.catalogId ? '' : 'Uses a different catalog';
-      return normalizeObjective(a.campaign?.objective) === 'OUTCOME_SALES' ? '' : 'Catalog ads need a Sales campaign';
-    }
-    return set ? 'Catalog ad sets need a catalog ad' : '';
-  };
+  const blockedFor = (a: AdsetLite) => (adFit ? adsetFit(a, adFit) : '');
   const items = (res.data || [])
     .filter((a) => !q || a.name.toLowerCase().includes(q.toLowerCase()) || (a.campaign?.name || '').toLowerCase().includes(q.toLowerCase()))
     .sort((x, y) => Number(!!blockedFor(x)) - Number(!!blockedFor(y)));
