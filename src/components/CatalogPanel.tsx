@@ -22,10 +22,13 @@ export function SetThumbs({ s }: { s: SetLite }) {
   return <span className="set-thumbs" aria-hidden>{imgs.map((src, i) => <img key={i} src={src} alt="" loading="lazy" />)}</span>;
 }
 
-/** Out-of-stock count and a sample of product links, for the chosen product set. */
-export function SetChecks({ setId }: { setId: string }) {
-  const res = useAsync<{ outOfStock: number | null; links: { id: string; name: string; url?: string; ok: boolean; reason: string }[]; noUrl: number }>(`set-health-${setId}`, () => apiGet('set-health', { set: setId }));
-  if (res.loading) return <div className="set-checks"><Loading text="Checking products and links…" /></div>;
+export type SetHealth = { outOfStock: number | null; links: { id: string; name: string; url?: string; ok: boolean; reason: string }[]; noUrl: number };
+
+/** Out-of-stock count and a sample of product links, for the chosen product set. Pass `data` when it's already fetched. */
+export function SetChecks({ setId, data }: { setId: string; data?: SetHealth }) {
+  const fetched = useAsync<SetHealth>(data ? null : `set-health-${setId}`, () => apiGet('set-health', { set: setId }));
+  const res = data ? { data, loading: false, error: '' } : fetched;
+  if (res.loading) return <div className="set-checks"><Loading /></div>;
   if (res.error || !res.data) return <div className="set-checks"><div className="health-row warn"><span className="icon"><AlertTriangle size={16} /></span><div><div className="t">Couldn&apos;t check this product set</div><div className="d">{res.error}</div></div></div></div>;
   const { outOfStock, links, noUrl } = res.data;
   const bad = links.filter((l) => !l.ok);
@@ -201,7 +204,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
   return (
     <div className="card">
       <Field label="Catalog" hint={locked ? 'Set by the campaign.' : undefined}>
-        {catalogs.loading ? <Loading text="Loading catalogs…" /> : catalogs.error && !locked ? <div className="notice bad">{catalogs.error}</div> : locked ? (
+        {catalogs.loading ? <Loading /> : catalogs.error && !locked ? <div className="notice bad">{catalogs.error}</div> : locked ? (
           <input className="input" disabled value={current ? `${current.name} (${current.id})` : catalogId} />
         ) : catalogs.data && !catalogs.data.length ? (
           <div className="notice warn">No catalogs found for this ad account. It isn&apos;t using one yet and its business has none. Create one in Commerce Manager, or connect your store through the Facebook &amp; Instagram app.</div>
@@ -233,7 +236,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
 
       {showHealth && onPixel ? (
         <Field label="Dataset (pixel)" hint="The pixel that sends ViewContent, AddToCart and Purchase from your store. It must be linked to the catalog.">
-          {pixelsLoading ? <Loading text="Loading datasets…" /> : (
+          {pixelsLoading ? <Loading /> : (
             <Select value={pixelId} onChange={onPixel} placeholder="Select a dataset (pixel)..." options={(pixels || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
           )}
         </Field>
@@ -241,7 +244,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
 
       {catalogId ? (
         <Field label={`Product sets${productSets.length ? ` (${productSets.length})` : ''}`} hint="The products this ad set can show. Create or edit sets in Commerce Manager.">
-          {productSetsLoading ? <Loading text="Loading product sets…" /> : productSetsError ? <div className="notice bad">{productSetsError}</div> : !productSets.length ? (
+          {productSetsLoading ? <Loading /> : productSetsError ? <div className="notice bad">{productSetsError}</div> : !productSets.length ? (
             <div className="notice warn">This catalog has no product sets yet.</div>
           ) : chosenSet && !pickingSet ? (
             <>
@@ -280,7 +283,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
             <span className="label" style={{ margin: 0 }}>Catalog readiness</span>
             <button type="button" className="btn-link" onClick={health.reload} disabled={health.loading}><RefreshCw size={12} style={{ verticalAlign: -1 }} /> Check again</button>
           </div>
-          {health.loading ? <Loading text="Checking catalog…" /> : health.error ? <div className="notice bad">{health.error}</div> : result?.rows.map((r, i) => (
+          {health.loading ? <Loading /> : health.error ? <div className="notice bad">{health.error}</div> : result?.rows.map((r, i) => (
             <div key={i} className={`health-row ${r.state}`}>
               <span className="icon">{ICON[r.state]}</span>
               <div>
