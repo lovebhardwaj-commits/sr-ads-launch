@@ -46,6 +46,14 @@ export async function apiPost<T>(action: string, body: unknown): Promise<T> {
   return handle<T>(res, { method: 'POST', action, input: body, started });
 }
 
+/** POST raw bytes (a video chunk) with its details in the query string. */
+export async function apiPostBytes<T>(action: string, params: Record<string, string>, bytes: Blob): Promise<T> {
+  const started = Date.now();
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`/api/meta/${action}?${qs}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: bytes });
+  return handle<T>(res, { method: 'POST', action, input: { ...params, bytes: bytes.size }, started });
+}
+
 export function errorText(e: unknown): string {
   if (e instanceof ApiError) return e.meta.userMessage || e.meta.message;
   return (e as Error)?.message || 'Something went wrong';

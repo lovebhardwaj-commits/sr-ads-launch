@@ -64,7 +64,9 @@ function proof(token: string): string | undefined {
   return createHmac('sha256', secret).update(token).digest('hex');
 }
 
-async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, token: string, params: Params = {}): Promise<T> {
+type FilePart = { field: string; data: Blob; name: string };
+
+async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, token: string, params: Params = {}, file?: FilePart): Promise<T> {
   const auth: Params = { access_token: token, appsecret_proof: proof(token) };
   const url = path.startsWith('http') ? new URL(path) : new URL(`${GRAPH_URL}/${path.replace(/^\//, '')}`);
   const started = Date.now();
@@ -78,6 +80,13 @@ async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, token: s
       const qs = encode({ ...params, ...auth });
       qs.forEach((v, k) => url.searchParams.set(k, v));
       res = await fetch(url, { method, cache: 'no-store' });
+    } else if (file) {
+      // Binary upload (video chunks): multipart with the other params as fields.
+      const fd = new FormData();
+      encode({ ...params, ...auth }).forEach((v, k) => fd.set(k, v));
+      fd.set(file.field, file.data, file.name);
+      asked[file.field] = `<${file.data.size.toLocaleString('en-IN')} bytes>`;
+      res = await fetch(url, { method, body: fd, cache: 'no-store' });
     } else {
       res = await fetch(url, {
         method,
@@ -117,6 +126,8 @@ async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, token: s
 export const graph = {
   get: <T>(path: string, token: string, params?: Params) => call<T>('GET', path, token, params),
   post: <T>(path: string, token: string, params?: Params) => call<T>('POST', path, token, params),
+  /** POST with one binary file field (multipart). */
+  postFile: <T>(path: string, token: string, params: Params, file: FilePart) => call<T>('POST', path, token, params, file),
   /** GET a list edge and follow `paging.next` up to `maxPages`. */
   async list<T>(path: string, token: string, params: Params = {}, maxPages = 5): Promise<T[]> {
     const out: T[] = [];
