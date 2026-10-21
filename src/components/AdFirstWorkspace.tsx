@@ -38,8 +38,8 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   onDone: (r: LaunchResult, mode: Mode) => void;
-  /** Leave the workspace (back to all launch options) */
-  onExit: () => void;
+  /** Leave the workspace from the first step (Launch: back to all launch options). Without it, the first step has no back button. */
+  onExit?: () => void;
   /** Reusing the ad just launched: start on the Campaign & ad set step; name of the ad set it went into */
   repeatOf?: string;
   /** Catalog Ads > Create ad: catalog ads only (no image/video or existing post) */
@@ -173,9 +173,11 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
     <div className="ws">
       {/* Step bar: back, the four steps, continue */}
       <nav className="ws-bar" aria-label="Steps">
-        <button type="button" className="btn-ghost ws-back" onClick={() => (prev ? go(prev) : onExit())}>
-          <ArrowLeft size={14} /> {prev ? 'Back' : exitLabel}
-        </button>
+        {prev || onExit ? (
+          <button type="button" className="btn-ghost ws-back" onClick={() => (prev ? go(prev) : onExit?.())}>
+            <ArrowLeft size={14} /> {prev ? 'Back' : exitLabel}
+          </button>
+        ) : <span className="ws-next-spacer" />}
         <ol className="ws-steps">
           {STEPS.map((s, i) => {
             const skipped = s.key === 'SETTINGS' && !!dest && !needsSettings;
@@ -312,7 +314,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
         {/* Action bar */}
         {step !== 'REVIEW' ? (
           <div className="sticky-bar ws-foot">
-            <button type="button" className="btn-ghost" onClick={() => (prev ? go(prev) : onExit())}><ArrowLeft size={14} /> {prev ? 'Back' : exitLabel}</button>
+            {prev || onExit ? <button type="button" className="btn-ghost" onClick={() => (prev ? go(prev) : onExit?.())}><ArrowLeft size={14} /> {prev ? 'Back' : exitLabel}</button> : null}
             <span className="sticky-text">
               {blocking.length ? <>Still needed: {blocking.map((m) => <button type="button" key={m.key} className="need" onClick={() => jumpTo(m)} title="Go to this field">{m.label}</button>)}</> : <span className="ready">Ready to continue</span>}
             </span>
