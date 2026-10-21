@@ -188,6 +188,42 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
       });
     }
 
+    case 'catalog-performance': {
+      // Ad-level results for the date range, each ad marked catalog or not. A catalog ad has a product set on
+      // its creative or ad set, or sits in a campaign with a catalog.
+      const actId = act(q.get('account'));
+      const time_range = { since: need(q.get('since'), 'since'), until: need(q.get('until'), 'until') };
+      const rows = await graph.list<any>(`${actId}/insights`, token, {
+        level: 'ad', time_range, limit: 500,
+        fields: 'ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,reach,impressions,clicks,actions,action_values',
+      }, 10);
+      const ids = Array.from(new Set(rows.map((r) => r.ad_id)));
+      const meta: Record<string, any> = {};
+      const batches: string[][] = [];
+      for (let i = 0; i < ids.length; i += 50) batches.push(ids.slice(i, i + 50));
+      await Promise.all(batches.map(async (chunk) => {
+        const res = await safe(() => graph.get<Record<string, any>>('', token, { ids: chunk.join(','), fields: 'effective_status,creative{thumbnail_url,product_set_id},adset{promoted_object},campaign{promoted_object}' }));
+        if (!('unavailable' in res)) Object.assign(meta, res);
+      }));
+      const PURCHASE = ['omni_purchase', 'purchase', 'offsite_conversion.fb_pixel_purchase'];
+      const pick = (list?: { action_type: string; value: string }[]) => {
+        for (const t of PURCHASE) { const hit = list?.find((x) => x.action_type === t); if (hit) return Number(hit.value) || 0; }
+        return 0;
+      };
+      return rows.map((r) => {
+        const m = meta[r.ad_id] || {};
+        const productSetId = m.creative?.product_set_id || m.adset?.promoted_object?.product_set_id || '';
+        const catalogId = m.campaign?.promoted_object?.product_catalog_id || m.adset?.promoted_object?.product_catalog_id || '';
+        return {
+          id: r.ad_id, name: r.ad_name, adset: r.adset_name, campaign: r.campaign_name,
+          status: m.effective_status || '', thumb: m.creative?.thumbnail_url || '',
+          productSetId, catalogId, isCatalog: !!(productSetId || catalogId),
+          spend: Number(r.spend) || 0, reach: Number(r.reach) || 0, impressions: Number(r.impressions) || 0, clicks: Number(r.clicks) || 0,
+          purchases: pick(r.actions), value: pick(r.action_values),
+        };
+      });
+    }
+
     case 'video-status': {
       // Meta processes uploaded videos before they can be used in an ad.
       const v = await graph.get<{ status?: { video_status?: string; processing_progress?: number } }>(need(q.get('video'), 'video'), token, { fields: 'status' });
