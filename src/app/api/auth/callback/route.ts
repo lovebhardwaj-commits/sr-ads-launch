@@ -54,7 +54,8 @@ export async function GET(req: NextRequest) {
       declined,
       tokenExpiresAt: long.expires_in ? Date.now() + long.expires_in * 1000 : undefined,
     });
-    const res = NextResponse.redirect(`${origin}/launch`);
+    // The home page decides where people start (Catalog Ads).
+    const res = NextResponse.redirect(`${origin}/`);
     res.cookies.set(SESSION_COOKIE, sealed, sessionCookieOptions);
     res.cookies.delete(STATE_COOKIE);
     return res;

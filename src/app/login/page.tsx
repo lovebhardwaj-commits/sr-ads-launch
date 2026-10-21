@@ -15,7 +15,7 @@ const ERRORS: Record<string, string> = {
 
 export default async function LoginPage({ searchParams }: { searchParams: { error?: string; missing?: string } }) {
   const configMissing = missingEnv();
-  if (!configMissing.length && (await getSession())) redirect('/launch');
+  if (!configMissing.length && (await getSession())) redirect('/');
   const scopes = process.env.FACEBOOK_CONFIG_ID ? null : getScopes();
   const err = searchParams.error;
   const missing = searchParams.missing || configMissing.join(', ');

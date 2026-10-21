@@ -16,6 +16,7 @@ export const PRESETS: { key: string; label: string; range: () => [Date, Date] }[
   { key: 'last_14d', label: 'Last 14 Days', range: () => [addDays(new Date(), -14), addDays(new Date(), -1)] },
   { key: 'last_30d', label: 'Last 30 Days', range: () => [addDays(new Date(), -30), addDays(new Date(), -1)] },
   { key: 'last_90d', label: 'Last 90 Days', range: () => [addDays(new Date(), -90), addDays(new Date(), -1)] },
+  { key: 'last_365d', label: 'Last 365 Days', range: () => [addDays(new Date(), -365), addDays(new Date(), -1)] },
   { key: 'this_month', label: 'This Month', range: () => { const n = new Date(); return [new Date(n.getFullYear(), n.getMonth(), 1), n]; } },
   { key: 'last_month', label: 'Last Month', range: () => { const n = new Date(); return [new Date(n.getFullYear(), n.getMonth() - 1, 1), new Date(n.getFullYear(), n.getMonth(), 0)]; } },
 ];
