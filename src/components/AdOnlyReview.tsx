@@ -1,7 +1,9 @@
 'use client';
 import { Fragment, useEffect, useState } from 'react';
 import { apiPost, errorText } from '@/lib/client-api';
+import { apiGet } from '@/lib/client-api';
 import { CTAS, buildUrlTags } from '@/lib/constants';
+import { useAsync } from '@/lib/hooks';
 import type { AdAccount, AdsetLite, FormState, LaunchResult } from '@/lib/types';
 import { adsetFacts } from './AdsetFacts';
 import ProductStrip from './ProductStrip';
@@ -29,6 +31,8 @@ export function AdOnlyPanel({ account, form, target, onClose, onDone, backLabel 
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<LaunchResult | null>(null);
   const [error, setError] = useState('');
+  const [understood, setUnderstood] = useState(false);
+  const pixels = useAsync<{ id: string; name: string }[]>(`pixels-${account.id}`, () => apiGet('pixels', { account: account.id }));
   const ad = form.ad;
   const isCatalog = ad.kind === 'CATALOG';
   const targetSet = target.promoted_object?.product_set_id;
@@ -43,7 +47,12 @@ export function AdOnlyPanel({ account, form, target, onClose, onDone, backLabel 
       : ad.kind === 'POST' ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post` : `New ad with uploaded image${ad.imageName ? ` (${ad.imageName})` : ''}, "${cta}"`],
   ];
   if (isCatalog) rows.push(['Products', targetSet ? 'From the ad set\u2019s product set' : 'From the product set chosen for the ad (ad-level catalog)']);
-  if (isCatalog) rows.push(['Destination', ad.destination === 'APP_WEB' ? 'App, website as backup' : 'Website']);
+  if (isCatalog) rows.push(['Clicks go to', ad.destination === 'APP_WEB' ? 'App, website as backup' : 'Website']);
+  // The ad tracks website events with the chosen dataset (pixel), else the ad set's own.
+  const trackPixel = form.adset.pixelId || target.promoted_object?.pixel_id || '';
+  const pxName = (id: string) => { const p = pixels.data?.find((x) => x.id === id); return p ? `${p.name} (${p.id})` : id; };
+  rows.push(['Dataset (pixel)', trackPixel ? `${pxName(trackPixel)}, tracks website events for this ad` : 'None chosen']);
+  const pixelMismatch = !!(form.adset.pixelId && target.promoted_object?.pixel_id && form.adset.pixelId !== target.promoted_object.pixel_id);
   if (isCatalog || ad.kind === 'UPLOAD') rows.push([isCatalog ? 'See more URL' : 'Website', ad.link]);
   rows.push(['URL parameters', buildUrlTags(ad.urlTags || {}) || 'None']);
 
@@ -60,10 +69,17 @@ export function AdOnlyPanel({ account, form, target, onClose, onDone, backLabel 
         {title ? <><h2 id="adonly-title">Review &amp; Launch</h2><p className="note">Your ad is added to the existing ad set. The ad set&apos;s budget, audience and schedule stay as they are.</p></> : null}
         <dl className="kv">{rows.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>
         {isCatalog ? <div style={{ marginTop: 12 }}><ProductStrip setId={targetSet || form.adset.productSetId} label="Products the ad can show" /></div> : null}
+        {pixelMismatch ? (
+          <div className="notice warn" style={{ marginTop: 12 }}>This ad set optimises for <b>{pxName(target.promoted_object?.pixel_id || '')}</b>, but your ad tracks <b>{pxName(form.adset.pixelId)}</b>. Use the same dataset (pixel) unless you mean to track a different one.</div>
+        ) : null}
+        {!trackPixel ? <div className="notice warn" style={{ marginTop: 12 }}>No dataset (pixel) is chosen, so Ads Manager won&apos;t track website events for this ad. Pick one in the Ad step.</div> : null}
         <div className="field" style={{ marginTop: 18 }}>
           <span className="label">Start as</span>
           <Segmented value={status} onChange={setStatus} options={[{ key: 'PAUSED', label: 'Paused' }, { key: 'ACTIVE', label: 'Active' }]} />
           <div className="hint">{status === 'PAUSED' ? 'The ad is created paused so you can check it in Ads Manager first.' : 'The ad delivers once Meta approves it, if its ad set and campaign are active.'}</div>
+          {status === 'ACTIVE' ? (
+            <label className="confirm-active"><input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} /> I understand this can start spending as soon as Meta approves it.</label>
+          ) : null}
         </div>
         {failed?.error ? (
           <div className="notice bad" style={{ marginTop: 16 }}>
@@ -74,8 +90,8 @@ export function AdOnlyPanel({ account, form, target, onClose, onDone, backLabel 
         {error ? <div className="notice bad" style={{ marginTop: 16 }}>{error}</div> : null}
         <div className="modal-actions">
           <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>{backLabel}</button>
-          <button type="button" className="btn-primary" onClick={go} disabled={busy}>
-            {busy ? <><span className="spinner" style={{ borderTopColor: '#fff' }} /> Launching…</> : status === 'ACTIVE' ? 'Add ad' : 'Add ad paused'}
+          <button type="button" className="btn-primary" onClick={go} disabled={busy || (status === 'ACTIVE' && !understood)}>
+            {busy ? <><span className="spinner" style={{ borderTopColor: '#fff' }} /> Launching…</> : status === 'ACTIVE' ? 'Add ad and start spending' : 'Add ad paused'}
           </button>
         </div>
     </>

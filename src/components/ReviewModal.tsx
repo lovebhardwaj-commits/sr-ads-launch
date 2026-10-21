@@ -42,6 +42,7 @@ export function ReviewPanel({ mode, account, form, ctx, campaign, source, produc
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<LaunchResult | null>(null);
   const [error, setError] = useState('');
+  const [understood, setUnderstood] = useState(false);
 
   const c = form.campaign;
   const a = form.adset;
@@ -83,7 +84,7 @@ export function ReviewPanel({ mode, account, form, ctx, campaign, source, produc
   if (goal?.pixel || ctx.isCatalog) {
     if (goal?.pixel) rows.push(['Conversion event', CONVERSION_EVENTS.find((e) => e.key === (goal.fixedEvent || a.event))?.label || a.event]);
     const px = pixels.find((p) => p.id === a.pixelId);
-    rows.push(['Pixel', px ? `${px.name} (${px.id})` : a.pixelId]);
+    rows.push(['Dataset (pixel)', px ? `${px.name} (${px.id})` : a.pixelId]);
   }
   if (usesAudience) {
     rows.push(['Audience', a.audienceType === 'ADVANTAGE' ? 'Advantage+ Audience' : a.audienceType === 'INTEREST' ? `Interests: ${a.interests.map((i) => i.name).join(', ')}` : a.audienceType === 'SAVED' ? 'Saved audience' : 'Same as original ad set']);
@@ -98,7 +99,7 @@ export function ReviewPanel({ mode, account, form, ctx, campaign, source, produc
   if (ctx.needsAd) {
     rows.push(['Ad', `${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} from catalog, "${CTAS.find((x) => x.key === form.ad.cta)?.label}"`]);
     rows.push(['Catalog media', form.ad.media === 'SLIDESHOW' ? 'Multiple images (slideshow)' : form.ad.media === 'VIDEO' ? 'Product videos' : 'Images']);
-    rows.push(['Destination', form.ad.destination === 'APP_WEB' ? 'App, website as backup' : 'Website']);
+    rows.push(['Clicks go to', form.ad.destination === 'APP_WEB' ? 'App, website as backup' : 'Website']);
     if (ctx.adLevelCatalog) rows.push(['Catalog', 'Set on the ad (the campaign has no catalog)']);
     rows.push(['See more URL', form.ad.link]);
     rows.push(['URL parameters', buildUrlTags(form.ad.urlTags || {}) || 'None']);
@@ -152,6 +153,9 @@ export function ReviewPanel({ mode, account, form, ctx, campaign, source, produc
           <span className="label">Start as</span>
           <Segmented value={status} onChange={setStatus} options={[{ key: 'PAUSED', label: 'Paused' }, { key: 'ACTIVE', label: 'Active' }]} />
           <div className="hint">{status === 'PAUSED' ? 'Everything is created paused so you can check it in Ads Manager first.' : 'Ads start delivering as soon as Meta approves them.'}</div>
+          {status === 'ACTIVE' ? (
+            <label className="confirm-active"><input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} /> I understand this can start spending as soon as Meta approves it.</label>
+          ) : null}
         </div>
 
         {failed?.error ? (
@@ -170,8 +174,8 @@ export function ReviewPanel({ mode, account, form, ctx, campaign, source, produc
 
         <div className="modal-actions">
           <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>{backLabel}</button>
-          <button type="button" className="btn-primary" onClick={go} disabled={busy}>
-            {busy ? <><span className="spinner" style={{ borderTopColor: '#fff' }} /> Launching…</> : status === 'ACTIVE' ? 'Launch' : 'Launch paused'}
+          <button type="button" className="btn-primary" onClick={go} disabled={busy || (status === 'ACTIVE' && !understood)}>
+            {busy ? <><span className="spinner" style={{ borderTopColor: '#fff' }} /> Launching…</> : status === 'ACTIVE' ? 'Launch and start spending' : 'Launch paused'}
           </button>
         </div>
     </>
