@@ -174,7 +174,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
       {/* Step bar: back icon, the four steps, continue */}
       <nav className="ws-bar" aria-label="Steps">
         {prev || onExit ? (
-          <button type="button" className="icon-btn bordered ws-back" onClick={() => (prev ? go(prev) : onExit?.())} aria-label={prev ? 'Back' : exitLabel} title={prev ? 'Back' : exitLabel}>
+          <button type="button" className="icon-btn ws-back" onClick={() => (prev ? go(prev) : onExit?.())} aria-label={prev ? 'Back' : exitLabel} title={prev ? 'Back' : exitLabel}>
             <ArrowLeft size={16} />
           </button>
         ) : null}
