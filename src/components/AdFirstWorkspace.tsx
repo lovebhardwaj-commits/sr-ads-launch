@@ -31,9 +31,9 @@ const AD_TYPES: { key: AdType; title: string; text: string; icon: ReactNode }[] 
 /**
  * "Start with an Ad" workspace: a sticky step bar on top (back, steps, continue), one step at a time in
  * the editor, the live preview and ad set summary on the right, and an action bar that says what's blocking.
- * Nothing is stored in the browser.
+ * Nothing is stored in the browser. `catalogOnly` (Catalog Ads > Create ad) offers catalog ads only.
  */
-export default function AdFirstWorkspace({ account, form, setForm, onDone, onExit, repeatOf }: {
+export default function AdFirstWorkspace({ account, form, setForm, onDone, onExit, repeatOf, catalogOnly = false, exitLabel = 'All launch options' }: {
   account: AdAccount;
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
@@ -42,19 +42,23 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
   onExit: () => void;
   /** Reusing the ad just launched: start on the Campaign & ad set step; name of the ad set it went into */
   repeatOf?: string;
+  /** Catalog Ads > Create ad: catalog ads only (no image/video or existing post) */
+  catalogOnly?: boolean;
+  /** Label of the back button on the first step */
+  exitLabel?: string;
 }) {
   const [step, setStep] = useState<Step>(repeatOf ? 'DEST' : 'AD');
   // An ad that arrives with content (repeat, or kept across an ad account switch) keeps its type.
-  const [type, setType] = useState<AdType | null>(repeatOf || form.ad.name ? (form.ad.kind === 'CATALOG' || form.ad.kind === 'POST' ? form.ad.kind : 'UPLOAD') : null);
+  const [type, setType] = useState<AdType | null>(catalogOnly ? 'CATALOG' : repeatOf || form.ad.name ? (form.ad.kind === 'CATALOG' || form.ad.kind === 'POST' ? form.ad.kind : 'UPLOAD') : null);
   const [dest, setDest] = useState<Destination | null>(null);
   const [settingsMissing, setSettingsMissing] = useState<Missing[]>([{ key: 'settings', label: 'Ad set settings' }]);
   const [catalogReady, setCatalogReady] = useState(false);
   const mainRef = useRef<HTMLDivElement>(null);
 
   const startFresh = () => {
-    const f = defaultForm();
-    setForm({ ...f, ad: { ...f.ad, adFirst: true } });
-    setType(null); setDest(null); setStep('AD');
+    const f = defaultForm(catalogOnly);
+    setForm({ ...f, campaign: { ...f.campaign, catalogEnabled: catalogOnly }, ad: { ...f.ad, adFirst: true } });
+    setType(catalogOnly ? 'CATALOG' : null); setDest(null); setStep('AD');
   };
 
   const isCatalog = form.ad.kind === 'CATALOG';
@@ -170,7 +174,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
       {/* Step bar: back, the four steps, continue */}
       <nav className="ws-bar" aria-label="Steps">
         <button type="button" className="btn-ghost ws-back" onClick={() => (prev ? go(prev) : onExit())}>
-          <ArrowLeft size={14} /> {prev ? 'Back' : 'All launch options'}
+          <ArrowLeft size={14} /> {prev ? 'Back' : exitLabel}
         </button>
         <ol className="ws-steps">
           {STEPS.map((s, i) => {
@@ -201,8 +205,11 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
       <div className="ws-main" ref={mainRef}>
         {step === 'AD' ? (
           <>
-            <StepHead title="Create your ad" sub="Pick the kind of ad, then add its creative and text. The preview on the right updates as you type." />
-            <div className="type-cards" role="radiogroup" aria-label="Ad type">
+            <StepHead
+              title={catalogOnly ? 'Create your catalog ad' : 'Create your ad'}
+              sub={catalogOnly ? 'Pick the catalog and product set, then add the ad\u2019s text. The preview on the right shows real products.' : 'Pick the kind of ad, then add its creative and text. The preview on the right updates as you type.'}
+            />
+            {!catalogOnly ? <div className="type-cards" role="radiogroup" aria-label="Ad type">
               {AD_TYPES.map((t) => (
                 <button key={t.key} type="button" role="radio" aria-checked={type === t.key} className={`type-card ${type === t.key ? 'on' : ''}`} onClick={() => chooseType(t.key)}>
                   <span className="ic">{t.icon}</span>
@@ -210,7 +217,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
                   <span className="tx">{t.text}</span>
                 </button>
               ))}
-            </div>
+            </div> : null}
             {type === 'CATALOG' ? (
               <>
                 <SectionTitle>Products</SectionTitle>
@@ -305,7 +312,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
         {/* Action bar */}
         {step !== 'REVIEW' ? (
           <div className="sticky-bar ws-foot">
-            <button type="button" className="btn-ghost" onClick={() => (prev ? go(prev) : onExit())}><ArrowLeft size={14} /> {prev ? 'Back' : 'All launch options'}</button>
+            <button type="button" className="btn-ghost" onClick={() => (prev ? go(prev) : onExit())}><ArrowLeft size={14} /> {prev ? 'Back' : exitLabel}</button>
             <span className="sticky-text">
               {blocking.length ? <>Still needed: {blocking.map((m) => <button type="button" key={m.key} className="need" onClick={() => jumpTo(m)} title="Go to this field">{m.label}</button>)}</> : <span className="ready">Ready to continue</span>}
             </span>
