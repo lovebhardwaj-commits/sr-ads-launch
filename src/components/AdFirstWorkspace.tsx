@@ -42,7 +42,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
   onDone: (r: LaunchResult, mode: Mode) => void;
   /** Leave the workspace (back to all launch options) */
   onExit: () => void;
-  /** Reusing the ad just launched: start on the Ad set step; name of the ad set it went into */
+  /** Reusing the ad just launched: start on the Campaign & ad set step; name of the ad set it went into */
   repeatOf?: string;
 }) {
   const [step, setStep] = useState<Step>(repeatOf ? 'DEST' : 'AD');
@@ -101,7 +101,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
     return m;
   }, [form, isCatalog, type, catalogReady]);
   const needsSettings = !!dest && dest.kind !== 'ADSET';
-  const destMissing: Missing[] = dest ? [] : [{ key: 'dest', label: 'Ad set' }];
+  const destMissing: Missing[] = dest ? [] : [{ key: 'dest', label: 'Campaign or ad set' }];
 
   const reach: Record<Step, boolean> = {
     AD: true,
@@ -136,7 +136,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
 
   const chooseDest = (d: Destination) => {
     setDest(d);
-    if (d.kind !== 'ADSET') setSettingsMissing([{ key: 'settings', label: 'Ad set settings' }]);
+    if (d.kind !== 'ADSET') setSettingsMissing([{ key: 'settings', label: d.kind === 'NEW_CAMPAIGN' ? 'Campaign and ad set settings' : 'Ad set settings' }]);
     if (d.kind === 'NEW_ADSET') {
       const c = d.campaign;
       const level = c.daily_budget || c.lifetime_budget ? 'CAMPAIGN' : 'ADSET';
@@ -169,7 +169,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
 
   const STEPS: { key: Step; title: string; sub: string }[] = [
     { key: 'AD', title: 'Ad', sub: type ? `${AD_TYPES.find((t) => t.key === type)?.title}${form.ad.name ? ` · ${form.ad.name}` : ''}` : 'Type, creative and text' },
-    { key: 'DEST', title: 'Ad set', sub: dest ? destLabel(dest) : 'Existing or new' },
+    { key: 'DEST', title: 'Campaign & ad set', sub: dest ? destLabel(dest) : 'Existing or new' },
     { key: 'SETTINGS', title: 'Setup', sub: !dest ? 'Only for a new ad set or campaign' : needsSettings ? (dest.kind === 'NEW_CAMPAIGN' ? 'New campaign and ad set' : 'New ad set') : 'Not needed: existing ad set' },
     { key: 'REVIEW', title: 'Review', sub: 'Check and launch' },
   ];
@@ -191,7 +191,10 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
 
   const doneOf = (s: Step) => (s === 'AD' ? !adMissing.length : s === 'DEST' ? !!dest : s === 'SETTINGS' ? needsSettings && !settingsMissing.length : false);
 
-  const nextLabel = next === 'DEST' ? 'Choose ad set' : next === 'SETTINGS' ? 'Set up ad set' : 'Review';
+  // Named for what comes next, which depends on the pick in step 2.
+  const nextLabel = next === 'DEST' ? 'Choose campaign & ad set'
+    : next === 'SETTINGS' ? (dest?.kind === 'NEW_CAMPAIGN' ? 'Set up campaign & ad set' : 'Set up ad set')
+    : 'Review';
   // Continue never dead-ends: with something missing it takes you to the first missing field.
   const proceed = () => { if (!next) return; if (blocking.length) { jumpTo(blocking[0]); return; } go(next); };
 
@@ -223,7 +226,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
         ) : <span className="ws-next-spacer" />}
       </nav>
       {repeatOf ? (
-        <div className="ws-draft">Same ad as the one you just added to <b>{repeatOf}</b>. Pick another ad set, or edit the ad first.</div>
+        <div className="ws-draft">Same ad as the one you just added to <b>{repeatOf}</b>. Pick another campaign or ad set, or edit the ad first.</div>
       ) : null}
       {restored ? (
         <div className="ws-draft">Draft restored from your last visit. <button type="button" className="btn-link" onClick={startFresh}>Start fresh</button></div>
@@ -281,7 +284,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
           </>
         ) : step === 'DEST' ? (
           <>
-            <StepHead title="Which ad set should run this ad?" sub={isCatalog ? 'Pick an existing ad set, or create a new one. Only ad sets this catalog ad can join are shown.' : 'Pick an existing ad set, or create a new one. Only ad sets this ad can join are shown.'} />
+            <StepHead title="Which campaign and ad set should run this ad?" sub={`Pick an existing ad set, create a new ad set in a campaign, or create a new campaign. Only campaigns and ad sets this ${isCatalog ? 'catalog ad' : 'ad'} can go into are shown.`} />
             <DestinationTree account={account} fit={fit} value={dest} onChange={chooseDest} />
             {dest?.kind === 'ADSET' ? (
               <>
@@ -315,7 +318,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
             <StructureMap account={account} form={form} dest={dest} />
             <div className="card" style={{ marginTop: 14 }}>
               {dest.kind === 'ADSET' ? (
-                <AdOnlyPanel account={account} form={form} target={dest.adset} onClose={() => go('DEST')} onDone={finish} backLabel="Back to ad set" title={false} />
+                <AdOnlyPanel account={account} form={form} target={dest.adset} onClose={() => go('DEST')} onDone={finish} backLabel="Back to campaign & ad set" title={false} />
               ) : (
                 <ReviewPanel
                   mode={mode}
