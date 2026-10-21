@@ -217,3 +217,20 @@ details.adv[open] > summary { margin-bottom: 12px; }
 .btn-primary.blocked { opacity: .6; }
 .confirm-active { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; font-size: 12.5px; color: var(--ink); padding: 10px 12px; border-radius: 9px; background: var(--seg-on); border: 1px solid var(--seg-on-line); }
 .confirm-active input { margin-top: 2px; accent-color: var(--coral); }
+
+/* Ad account picker opens above the sticky step bar */
+.account-pick { position: relative; z-index: 45; }
+.notice.switched { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
+
+/* Existing posts: playable media */
+.post .thumb { position: relative; }
+.play-chip { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; border: 0; background: rgba(0,0,0,.7); color: #fff; font-size: 11px; font-weight: 600; cursor: pointer; }
+.play-chip:hover { background: rgba(0,0,0,.85); }
+.media-view { width: 100%; }
+.media-stage { position: relative; background: #000; border-radius: 10px; overflow: hidden; display: grid; place-items: center; min-height: 200px; }
+.media-stage video, .media-stage img { width: 100%; max-height: 70vh; object-fit: contain; display: block; background: #000; }
+.media-stage .nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; background: rgba(255,255,255,.92); color: #111; border: 1px solid var(--card-line); width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; }
+
+/* Video upload progress */
+.progress { height: 6px; border-radius: 999px; background: var(--seg); overflow: hidden; margin-top: 8px; }
+.progress i { display: block; height: 100%; background: var(--coral); transition: width .2s; }
