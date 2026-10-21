@@ -335,3 +335,5 @@ details.adv[open] > summary { margin-bottom: 12px; }
 .ws-steps { justify-content: flex-start; }
 .ws-bar .ws-back { width: 36px; height: 36px; padding: 0; }
 .ws-step .t { white-space: nowrap; }
+/* Back: just the arrow, no box or hover tint */
+.ws-bar .ws-back, .ws-bar .ws-back:hover { width: auto; height: auto; padding: 4px; border: 0; background: none; color: var(--ink-2); justify-content: center; cursor: pointer; }
