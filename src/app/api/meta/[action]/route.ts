@@ -134,7 +134,7 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
     case 'products': {
       const set = q.get('set');
       const path = set ? `${set}/products` : `${need(q.get('catalog'), 'catalog')}/products`;
-      const res = await graph.get<{ data: any[] }>(path, token, { fields: 'id,name,price,sale_price,image_url,additional_image_urls,url,brand', limit: 25 });
+      const res = await graph.get<{ data: any[] }>(path, token, { fields: 'id,name,price,sale_price,image_url,additional_image_urls,url,brand,availability', limit: 25 });
       return res.data;
     }
 
