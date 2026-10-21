@@ -197,6 +197,11 @@ export function standardCreativeParams(form: FormState) {
   return { name, object_story_spec: story, ...(urlTags ? { url_tags: urlTags } : {}) };
 }
 
+/** Ad-level website-event tracking (Ads Manager: Tracking → Website events) for the dataset (pixel). */
+function tracking(pixelId?: string) {
+  return pixelId ? { tracking_specs: [{ 'action.type': ['offsite_conversion'], fb_pixel: [pixelId] }] } : {};
+}
+
 export async function launch(req: LaunchRequest, token: string): Promise<LaunchResult> {
   const { accountId, currency, mode, form } = req;
   const act = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
@@ -220,7 +225,7 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
       result.created.creative = { id: creative.id };
       step = 'ad';
       const adName = form.ad.name.trim() || `${target.name} - ${isCatalogAd ? 'Catalog ad' : 'Ad'}`;
-      const ad = await graph.post<{ id: string }>(`${act}/ads`, token, { name: adName, adset_id: target.id, creative: { creative_id: creative.id }, status: 'PAUSED' });
+      const ad = await graph.post<{ id: string }>(`${act}/ads`, token, { name: adName, adset_id: target.id, creative: { creative_id: creative.id }, status: 'PAUSED', ...tracking(form.adset.pixelId || target.promoted_object?.pixel_id) });
       result.created.ads.push({ id: ad.id, name: adName });
       result.created.adset = { id: target.id, name: target.name };
       if (req.status === 'ACTIVE') {
@@ -270,6 +275,7 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
         adset_id: adset.id,
         creative: { creative_id: creative.id },
         status: 'PAUSED',
+        ...tracking(form.adset.pixelId),
       });
       result.created.ads.push({ id: ad.id, name: adName });
     }
