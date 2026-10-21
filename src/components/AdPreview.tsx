@@ -5,6 +5,7 @@ import { apiGet } from '@/lib/client-api';
 import { CTAS } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
 import type { FormState } from '@/lib/types';
+import { MediaView } from './PostMedia';
 import { Loading, Segmented } from './ui';
 
 interface Page { id: string; name: string; instagram_business_account?: { id: string; username?: string } }
@@ -185,7 +186,7 @@ export function CatalogPreview({ form, productSetId, compact = false }: { form: 
   );
 }
 
-/** Image ad and existing post previews. */
+/** Image or video ad and existing post previews. */
 export function NormalPreview({ form }: { form: FormState }) {
   const ad = form.ad;
   const page = usePage(ad.pageId);
@@ -195,10 +196,10 @@ export function NormalPreview({ form }: { form: FormState }) {
     return (
       <div className="preview" aria-label="Post preview">
         <div className="preview-tabs"><span className="label" style={{ margin: 0 }}>Preview</span></div>
-        {ad.postPreview ? (
+        {ad.postPreview || ad.postMedia?.length ? (
           <>
             <div className="preview-head"><div className="pg">{pageName.slice(0, 1)}</div><div><div className="n">{pageName}</div><div className="s">Sponsored</div></div></div>
-            <img src={ad.postPreview} alt="" style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+            {ad.postMedia?.length ? <MediaView media={ad.postMedia} /> : <img src={ad.postPreview} alt="" style={{ width: '100%', borderRadius: 8, display: 'block' }} />}
             <p className="hint">The post runs as it is, with its own text and engagement.</p>
           </>
         ) : <div className="preview-empty">Pick a post to preview it.</div>}
@@ -211,7 +212,11 @@ export function NormalPreview({ form }: { form: FormState }) {
       <div className="preview-head"><div className="pg">{pageName.slice(0, 1)}</div><div><div className="n">{pageName}</div><div className="s">Sponsored</div></div></div>
       <div className="preview-text">{ad.message || 'Primary text'}</div>
       <div className="p-card single">
-        <div className="img" style={{ backgroundImage: ad.imageUrl ? `url("${ad.imageUrl}")` : undefined, backgroundSize: 'cover' }}>{!ad.imageUrl ? <span className="preview-empty" style={{ border: 0 }}>{ad.imageHash ? 'Image uploaded' : 'Upload an image'}</span> : null}</div>
+        {ad.videoUrl ? (
+          <video className="img" src={ad.videoUrl} poster={ad.imageUrl || undefined} controls playsInline muted preload="metadata" style={{ width: '100%', background: '#000', display: 'block' }} />
+        ) : (
+          <div className="img" style={{ backgroundImage: ad.imageUrl ? `url("${ad.imageUrl}")` : undefined, backgroundSize: 'cover' }}>{!ad.imageUrl ? <span className="preview-empty" style={{ border: 0 }}>{ad.imageHash ? 'Image uploaded' : 'Upload an image or video'}</span> : null}</div>
+        )}
         <div className="body">
           <div style={{ minWidth: 0 }}>
             <div className="ds">{ad.link.replace(/^https?:\/\//, '').split('/')[0].toUpperCase() || 'YOURSTORE.COM'}</div>
@@ -220,7 +225,7 @@ export function NormalPreview({ form }: { form: FormState }) {
           <span className="cta">{ctaLabel}</span>
         </div>
       </div>
-      <p className="hint">Feed preview. Meta adapts the image for Stories and Reels.</p>
+      <p className="hint">Feed preview. Meta adapts the {ad.videoUrl ? 'video' : 'image'} for Stories and Reels.</p>
     </div>
   );
 }
