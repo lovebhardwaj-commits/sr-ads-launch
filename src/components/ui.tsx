@@ -256,6 +256,8 @@ export function SearchSelect({ value, onChange, options, placeholder, searchPlac
   );
 }
 
-export function Loading({ text = 'Loading…' }: { text?: string }) {
-  return <div className="loading"><span className="spinner" />{text}</div>;
+/** Every loading state reads the same: data comes from Meta. (`text` is accepted for older callers and ignored.) */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function Loading(_props: { text?: string }) {
+  return <div className="loading"><span className="spinner" />Fetching data from Meta…</div>;
 }

@@ -13,7 +13,7 @@ export default function AccountPicker({ accounts, value, onChange }: {
   return (
     <div className="account-pick">
       <span className="label">Ad account</span>
-      {accounts.loading ? <Loading text="Loading ad accounts\u2026" /> : accounts.error ? (
+      {accounts.loading ? <Loading /> : accounts.error ? (
         <div className="notice bad">{accounts.error}</div>
       ) : accounts.data && !accounts.data.length ? (
         <div className="notice warn">No ad accounts found for this Facebook login. Ask a business admin to give you access to one.</div>
@@ -25,7 +25,7 @@ export default function AccountPicker({ accounts, value, onChange }: {
           noun="ad accounts"
           placeholder="Select an ad account..."
           searchPlaceholder={`Search ${(accounts.data || []).length.toLocaleString('en-IN')} ad accounts by name or ID`}
-          options={(accounts.data || []).map((a) => ({ key: a.id, label: a.name || a.account_id, meta: [a.account_id, ACCOUNT_STATUS[a.account_status ?? 1]].filter(Boolean).join(' \u00b7 ') }))}
+          options={(accounts.data || []).map((a) => ({ key: a.id, label: a.name || a.account_id, meta: [a.account_id, ACCOUNT_STATUS[a.account_status ?? 1]].filter(Boolean).join(' · ') }))}
         />
       )}
     </div>
