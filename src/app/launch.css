@@ -330,3 +330,8 @@ details.adv[open] > summary { margin-bottom: 12px; }
 .set-product .pr { font-size: 12px; }
 .set-product .pr s { color: var(--muted); margin-left: 4px; }
 .set-product .meta { font-size: 11px; color: var(--muted); }
+
+/* Step bar: steps start at the left (after the back icon when there is one) */
+.ws-steps { justify-content: flex-start; }
+.ws-bar .ws-back { width: 36px; height: 36px; padding: 0; }
+.ws-step .t { white-space: nowrap; }
