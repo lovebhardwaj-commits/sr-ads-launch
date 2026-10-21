@@ -1,5 +1,5 @@
 'use client';
-import { LogOut, Moon, PanelLeft, Rocket, Sun, Terminal } from 'lucide-react';
+import { LayoutGrid, LogOut, Moon, PanelLeft, Rocket, Sun, Terminal } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toggleLog, useApiLog } from '@/lib/api-log';
 import './shell.css';
@@ -18,12 +18,18 @@ function Logo({ compact }: { compact: boolean }) {
   );
 }
 
+const SECTIONS = [
+  { key: 'catalog', href: '/catalog-ads', label: 'Catalog Ads', icon: <LayoutGrid size={19} strokeWidth={1.7} /> },
+  { key: 'launch', href: '/launch', label: 'Launch', icon: <Rocket size={19} strokeWidth={1.7} /> },
+] as const;
+
 /**
- * App shell matching Fastrr Ads: sidebar with the logo and a single "Launch Ads" item,
+ * App shell matching Fastrr Ads: sidebar with the logo and the two sections (Catalog Ads, Launch),
  * top bar with breadcrumb and actions. `user` is absent on the login screen.
  * Sidebar and theme choices live in memory only (nothing is stored in the browser).
  */
-export default function AppShell({ user, children }: { user?: { name: string; picture?: string }; children: ReactNode }) {
+export default function AppShell({ user, section = 'launch', children }: { user?: { name: string; picture?: string }; section?: 'catalog' | 'launch'; children: ReactNode }) {
+  const here = SECTIONS.find((s) => s.key === section) || SECTIONS[1];
   const [collapsed, setCollapsed] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const log = useApiLog();
@@ -53,17 +59,18 @@ export default function AppShell({ user, children }: { user?: { name: string; pi
           </button>
         </div>
         <nav className="side-nav">
-          <div className="side-section">Create</div>
-          <a className="side-item" aria-current="page" href="/launch" title="Launch Ads">
-            <Rocket size={19} strokeWidth={1.7} />
-            <span>Launch Ads</span>
-          </a>
+          {SECTIONS.map((s) => (
+            <a key={s.key} className="side-item" aria-current={s.key === section ? 'page' : undefined} href={s.href} title={s.label}>
+              {s.icon}
+              <span>{s.label}</span>
+            </a>
+          ))}
         </nav>
       </aside>
 
       <div className="app-main">
         <header className="topbar">
-          <div className="crumbs"><span>Fastrr Ads</span><span className="sep">/</span><span className="here">Launch Ads</span></div>
+          <div className="crumbs"><span>Fastrr Ads</span><span className="sep">/</span><span className="here">{here.label}</span></div>
           <div className="top-actions">
             {user ? (
               <button type="button" className="icon-btn" onClick={toggleLog} aria-pressed={log.open} aria-label="API log" title="API log" style={{ position: 'relative' }}>
