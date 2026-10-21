@@ -8,7 +8,7 @@ import { useAsync } from '@/lib/hooks';
 import type { AdAccount, FormState, LaunchResult } from '@/lib/types';
 import AccountPicker from './AccountPicker';
 import AdFirstWorkspace from './AdFirstWorkspace';
-import { SetChecks, SetThumbs, type SetLite } from './CatalogPanel';
+import { SetChecks, SetThumbs, type SetHealth, type SetLite } from './CatalogPanel';
 import DateRange, { presetRange, type Range } from './DateRange';
 import LegalLinks from './LegalLinks';
 import { statusLabel } from './Pickers';
@@ -368,7 +368,7 @@ function ProductSets({ account, perf, money, onCreate }: { account: AdAccount; p
             </thead>
             <tbody>
               {list.map(({ set, t }) => (
-                <FragmentRow key={set.id} open={checking === set.id} cols={7} detail={<><SetProducts set={set} /><SetChecks setId={set.id} /></>}>
+                <FragmentRow key={set.id} open={checking === set.id} cols={7} detail={<SetProducts set={set} />}>
                   <td className="ad"><div className="ad-cell"><SetThumbs s={set} /><div style={{ minWidth: 0 }}><div className="nm">{set.name}</div><div className="sub">{set.id}</div></div></div></td>
                   <td className="num">{set.product_count != null ? set.product_count.toLocaleString('en-IN') : '–'}</td>
                   <td className="num">{perf.loading ? '…' : t.ads ? `${t.ads} (${t.live} live)` : '0'}</td>
@@ -392,10 +392,11 @@ function ProductSets({ account, perf, money, onCreate }: { account: AdAccount; p
 
 interface Product { id: string; name: string; price?: string; sale_price?: string; image_url?: string; brand?: string; availability?: string; url?: string }
 
-/** The products in a set (first 25, as Meta returns them). */
+/** The products in a set (first 25, as Meta returns them) and their checks, behind one loader. */
 function SetProducts({ set }: { set: SetLite }) {
   const res = useAsync<Product[]>(`products-${set.id}`, () => apiGet('products', { set: set.id }));
-  if (res.loading) return <Loading />;
+  const health = useAsync<SetHealth>(`set-health-${set.id}`, () => apiGet('set-health', { set: set.id }));
+  if (res.loading || health.loading) return <Loading />;
   if (res.error) return <div className="notice bad">{res.error}</div>;
   const list = res.data || [];
   if (!list.length) return <div className="note">This product set has no products.</div>;
@@ -416,6 +417,7 @@ function SetProducts({ set }: { set: SetLite }) {
           );
         })}
       </div>
+      {health.data ? <SetChecks setId={set.id} data={health.data} /> : null}
     </>
   );
 }
