@@ -81,6 +81,38 @@ export function defaultForm(catalog = false): FormState {
   };
 }
 
+/** Start with an Ad: an empty ad, or a catalog ad with its catalog and product set already chosen. */
+export function adFirstForm(catalog?: { catalogId: string; productSetId: string }): FormState {
+  const f = defaultForm(!!catalog);
+  return {
+    ...f,
+    campaign: catalog ? { ...f.campaign, catalogEnabled: true, catalogId: catalog.catalogId, objective: 'OUTCOME_SALES' } : f.campaign,
+    adset: catalog ? { ...f.adset, productSetId: catalog.productSetId } : f.adset,
+    ad: { ...f.ad, adFirst: true },
+  };
+}
+
+/** After switching ad account: clear what belongs to the old account, keep the rest of the ad. */
+export function clearAccountBound(f: FormState): FormState {
+  return {
+    ...f,
+    campaign: { ...f.campaign, catalogId: '' },
+    adset: { ...f.adset, productSetId: '', crossSellSourceSetId: '', pixelId: '', savedAudienceId: '', audienceType: f.adset.audienceType === 'SAVED' ? 'ADVANTAGE' : f.adset.audienceType },
+    ad: { ...f.ad, imageHash: '', imageUrl: '', imageName: '', videoId: '', videoStatus: '', videoUrl: '' },
+  };
+}
+
+/** The same ad again for another ad set: keep the ad, its catalog, product set and pixel; fresh campaign and ad set settings. */
+export function repeatForm(prev: FormState): FormState {
+  const f = adFirstForm();
+  return {
+    ...f,
+    campaign: { ...f.campaign, catalogEnabled: prev.campaign.catalogEnabled, catalogId: prev.campaign.catalogId, objective: prev.campaign.catalogEnabled ? 'OUTCOME_SALES' : f.campaign.objective },
+    adset: { ...f.adset, productSetId: prev.adset.productSetId, pixelId: prev.adset.pixelId },
+    ad: { ...prev.ad, adFirst: true },
+  };
+}
+
 export function buildContext(mode: Mode, form: FormState, campaign?: CampaignLite, source?: AdsetLite): FlowContext {
   const needsCampaign = mode === 'NEW' || mode === 'DUP_NEW';
   const objective = needsCampaign ? form.campaign.objective : normalizeObjective(campaign?.objective);
