@@ -141,7 +141,7 @@ export default function CatalogAdsApp({ declined }: { declined: string[] }) {
       ) : tab === 'overview' ? (
         <Overview perf={perf} money={money} range={range} />
       ) : tab === 'ads' ? (
-        <CatalogAdsTable perf={perf} money={money} range={range} />
+        <CatalogAdsTable perf={perf} money={money} />
       ) : tab === 'sets' ? (
         <ProductSets account={account} perf={perf} money={money} onCreate={(catalogId, productSetId) => startCreate({ catalogId, productSetId })} />
       ) : result ? (
@@ -158,8 +158,6 @@ export default function CatalogAdsApp({ declined }: { declined: string[] }) {
           form={form}
           setForm={setForm}
           catalogOnly
-          exitLabel="Product sets"
-          onExit={() => setTab('sets')}
           repeatOf={repeatOf || undefined}
           onDone={(r) => { setLastAd(r.ok ? { form, adsetName: r.created.adset?.name || '' } : null); setResult(r); window.scrollTo({ top: 0 }); }}
         />
@@ -173,7 +171,7 @@ export default function CatalogAdsApp({ declined }: { declined: string[] }) {
 type Perf = { data?: Row[]; loading: boolean; error: string };
 
 function PerfState({ perf, children }: { perf: Perf; children: () => React.ReactNode }) {
-  if (perf.loading) return <div className="card"><Loading text="Loading results from Meta\u2026" /></div>;
+  if (perf.loading) return <div className="card"><Loading /></div>;
   if (perf.error) return <div className="notice bad">{perf.error}</div>;
   return <>{children()}</>;
 }
@@ -198,7 +196,7 @@ function Overview({ perf, money: moneyExact, range }: { perf: Perf; money: (n: n
               <Metric k="Avg ROAS" v={t.roas.toFixed(2)} tone="ok" />
               <Metric k="CTR" v={`${t.ctr.toFixed(2)}%`} />
               <Metric k="Purchases" v={n(t.purchases)} />
-              <Metric k="CPA" v={t.purchases ? money(t.cpa) : '\u2013'} />
+              <Metric k="CPA" v={t.purchases ? money(t.cpa) : '–'} />
               <Metric k="Frequency" v={t.frequency.toFixed(2)} />
             </div>
           </div>
@@ -209,7 +207,7 @@ function Overview({ perf, money: moneyExact, range }: { perf: Perf; money: (n: n
           return (
             <div className="cat-delta" key={label}>
               <div className="hint" style={{ margin: 0 }}>{label}</div>
-              <div className={`big ${!b || Math.abs(d) < 0.5 ? '' : good === null ? '' : good ? 'ok' : 'bad'}`}>{b ? (Math.abs(d) < 0.5 ? '0%' : `${d > 0 ? '+' : ''}${d.toFixed(0)}%`) : '\u2013'}</div>
+              <div className={`big ${!b || Math.abs(d) < 0.5 ? '' : good === null ? '' : good ? 'ok' : 'bad'}`}>{b ? (Math.abs(d) < 0.5 ? '0%' : `${d > 0 ? '+' : ''}${d.toFixed(0)}%`) : '–'}</div>
               <div className="hint" style={{ margin: 0 }}>Catalog {show(a)} vs. Normal {show(b)}</div>
             </div>
           );
@@ -251,7 +249,7 @@ const COLS: { key: SortKey; label: string }[] = [
   { key: 'ctr', label: 'CTR' }, { key: 'purchases', label: 'Purchases' }, { key: 'value', label: 'Purchase value' },
 ];
 
-function CatalogAdsTable({ perf, money, range }: { perf: Perf; money: (n: number) => string; range: Range }) {
+function CatalogAdsTable({ perf, money }: { perf: Perf; money: (n: number) => string }) {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'spend', dir: -1 });
   return (
@@ -261,11 +259,10 @@ function CatalogAdsTable({ perf, money, range }: { perf: Perf; money: (n: number
         const s = q.trim().toLowerCase();
         const val = (r: Row, k: SortKey) => (k === 'spend' || k === 'purchases' || k === 'value' ? r[k] : rowMetrics(r)[k]);
         const rows = all.filter((r) => !s || `${r.name} ${r.campaign} ${r.adset}`.toLowerCase().includes(s)).sort((a, b) => (val(a, sort.key) - val(b, sort.key)) * sort.dir);
-        const t = totals(all);
         return (
           <>
-            <p className="note" style={{ marginTop: 0 }}>{all.length} catalog ads \u00b7 {range.since} to {range.until} \u00b7 {money(t.spend)} spent \u00b7 {t.roas.toFixed(2)} ROAS</p>
-            <div className="cat-search"><Search size={14} /><input className="input" placeholder="Search ads, ad sets or campaigns\u2026" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+            <p className="note" style={{ marginTop: 0 }}>{all.length} catalog {all.length === 1 ? 'ad' : 'ads'}</p>
+            <div className="cat-search"><Search size={14} /><input className="input" placeholder="Search ads, ad sets or campaigns…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
             {!all.length ? <div className="card note">No catalog ads delivered in this range.</div> : (
               <div className="cat-table-wrap">
                 <table className="cat-table">
@@ -289,13 +286,13 @@ function CatalogAdsTable({ perf, money, range }: { perf: Perf; money: (n: number
                           <td className="ad">
                             <div className="ad-cell">
                               {r.thumb ? <img src={r.thumb} alt="" /> : <span className="thumb-empty" />}
-                              <div style={{ minWidth: 0 }}><div className="nm" title={r.name}>{r.name}</div><div className="sub" title={`${r.campaign} \u203a ${r.adset}`}>{r.campaign} \u203a {r.adset}</div></div>
+                              <div style={{ minWidth: 0 }}><div className="nm" title={r.name}>{r.name}</div><div className="sub" title={`${r.campaign} › ${r.adset}`}>{r.campaign} › {r.adset}</div></div>
                             </div>
                           </td>
-                          <td><span className={`badge ${STATUS_TONE[r.status] || 'grey'}`}>{statusLabel(r.status) || '\u2013'}</span></td>
+                          <td><span className={`badge ${STATUS_TONE[r.status] || 'grey'}`}>{statusLabel(r.status) || '–'}</span></td>
                           <td className="num">{money(r.spend)}</td>
                           <td className="num">{m.roas.toFixed(2)}</td>
-                          <td className="num">{r.purchases ? money(m.cpr) : '\u2013'}</td>
+                          <td className="num">{r.purchases ? money(m.cpr) : '–'}</td>
                           <td className="num">{money(m.cpm)}</td>
                           <td className="num">{m.ctr.toFixed(2)}%</td>
                           <td className="num">{r.purchases.toLocaleString('en-IN')}</td>
@@ -305,7 +302,7 @@ function CatalogAdsTable({ perf, money, range }: { perf: Perf; money: (n: number
                     })}
                   </tbody>
                 </table>
-                {!rows.length ? <div className="note" style={{ padding: 14 }}>No catalog ads match \u201c{q}\u201d.</div> : null}
+                {!rows.length ? <div className="note" style={{ padding: 14 }}>No catalog ads match “{q}”.</div> : null}
               </div>
             )}
           </>
@@ -331,15 +328,16 @@ function ProductSets({ account, perf, money, onCreate }: { account: AdAccount; p
     return m;
   }, [perf.data]);
 
-  if (catalogs.loading) return <div className="card"><Loading text="Loading catalogs\u2026" /></div>;
+  if (catalogs.loading) return <div className="card"><Loading /></div>;
   if (catalogs.error) return <div className="notice bad">{catalogs.error}</div>;
   if (!catalogs.data?.length) return <div className="notice warn">No catalogs found for this ad account. Create one in Commerce Manager, or connect your store through the Facebook &amp; Instagram app.</div>;
 
   const s = q.trim().toLowerCase();
+  // Most catalog ads first, then highest spend, then name.
   const list = (sets.data || [])
     .filter((x) => !s || x.name.toLowerCase().includes(s))
     .map((x) => ({ set: x, t: totals(bySet.get(x.id) || []) }))
-    .sort((a, b) => b.t.spend - a.t.spend || a.set.name.localeCompare(b.set.name));
+    .sort((a, b) => b.t.ads - a.t.ads || b.t.spend - a.t.spend || a.set.name.localeCompare(b.set.name));
 
   return (
     <>
@@ -353,14 +351,14 @@ function ProductSets({ account, perf, money, onCreate }: { account: AdAccount; p
             noun="catalogs"
             placeholder="Select a catalog..."
             searchPlaceholder="Search catalogs by name or ID"
-            options={catalogs.data.map((c) => ({ key: c.id, label: c.name, meta: [c.product_count != null ? `${c.product_count.toLocaleString('en-IN')} products` : '', c.relevance === 'USED' ? 'Used in this ad account' : c.relevance === 'LINKED' ? 'Linked to this ad account\u2019s dataset' : ''].filter(Boolean).join(' \u00b7 ') }))}
+            options={catalogs.data.map((c) => ({ key: c.id, label: c.name, meta: [c.product_count != null ? `${c.product_count.toLocaleString('en-IN')} products` : '', c.relevance === 'USED' ? 'Used in this ad account' : c.relevance === 'LINKED' ? 'Linked to this ad account’s dataset' : ''].filter(Boolean).join(' · ') }))}
           />
         </div>
-        <div className="cat-search" style={{ margin: 0, flex: 1, maxWidth: 360 }}><Search size={14} /><input className="input" placeholder="Search product sets\u2026" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <div className="cat-search" style={{ margin: 0, flex: 1, maxWidth: 360 }}><Search size={14} /><input className="input" placeholder="Search product sets…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       </div>
       <p className="note">Pick a product set to create a catalog ad from it. Results are for catalog ads showing that set in the selected date range.</p>
 
-      {sets.loading ? <div className="card"><Loading text="Loading product sets\u2026" /></div> : sets.error ? <div className="notice bad">{sets.error}</div> : !sets.data?.length ? (
+      {sets.loading ? <div className="card"><Loading /></div> : sets.error ? <div className="notice bad">{sets.error}</div> : !sets.data?.length ? (
         <div className="notice warn">This catalog has no product sets yet. Create one in Commerce Manager.</div>
       ) : (
         <div className="cat-table-wrap">
@@ -370,24 +368,54 @@ function ProductSets({ account, perf, money, onCreate }: { account: AdAccount; p
             </thead>
             <tbody>
               {list.map(({ set, t }) => (
-                <FragmentRow key={set.id} open={checking === set.id} cols={7} detail={<SetChecks setId={set.id} />}>
+                <FragmentRow key={set.id} open={checking === set.id} cols={7} detail={<><SetProducts set={set} /><SetChecks setId={set.id} /></>}>
                   <td className="ad"><div className="ad-cell"><SetThumbs s={set} /><div style={{ minWidth: 0 }}><div className="nm">{set.name}</div><div className="sub">{set.id}</div></div></div></td>
-                  <td className="num">{set.product_count != null ? set.product_count.toLocaleString('en-IN') : '\u2013'}</td>
-                  <td className="num">{perf.loading ? '\u2026' : t.ads ? `${t.ads} (${t.live} live)` : '0'}</td>
-                  <td className="num">{perf.loading ? '\u2026' : t.ads ? money(t.spend) : '\u2013'}</td>
-                  <td className="num">{perf.loading ? '\u2026' : t.ads ? t.roas.toFixed(2) : '\u2013'}</td>
-                  <td className="num">{perf.loading ? '\u2026' : t.ads ? t.purchases.toLocaleString('en-IN') : '\u2013'}</td>
+                  <td className="num">{set.product_count != null ? set.product_count.toLocaleString('en-IN') : '–'}</td>
+                  <td className="num">{perf.loading ? '…' : t.ads ? `${t.ads} (${t.live} live)` : '0'}</td>
+                  <td className="num">{perf.loading ? '…' : t.ads ? money(t.spend) : '–'}</td>
+                  <td className="num">{perf.loading ? '…' : t.ads ? t.roas.toFixed(2) : '–'}</td>
+                  <td className="num">{perf.loading ? '…' : t.ads ? t.purchases.toLocaleString('en-IN') : '–'}</td>
                   <td className="actions">
-                    <button type="button" className="btn-link" onClick={() => setChecking(checking === set.id ? '' : set.id)}>{checking === set.id ? 'Hide checks' : 'Check products'}</button>
+                    <button type="button" className="btn-link" onClick={() => setChecking(checking === set.id ? '' : set.id)}>{checking === set.id ? 'Hide products' : 'View products'}</button>
                     <button type="button" className="btn-primary sm" onClick={() => onCreate(catalogId, set.id)}>Create ad</button>
                   </td>
                 </FragmentRow>
               ))}
             </tbody>
           </table>
-          {!list.length ? <div className="note" style={{ padding: 14 }}>No product sets match \u201c{q}\u201d.</div> : null}
+          {!list.length ? <div className="note" style={{ padding: 14 }}>No product sets match “{q}”.</div> : null}
         </div>
       )}
+    </>
+  );
+}
+
+interface Product { id: string; name: string; price?: string; sale_price?: string; image_url?: string; brand?: string; availability?: string; url?: string }
+
+/** The products in a set (first 25, as Meta returns them). */
+function SetProducts({ set }: { set: SetLite }) {
+  const res = useAsync<Product[]>(`products-${set.id}`, () => apiGet('products', { set: set.id }));
+  if (res.loading) return <Loading />;
+  if (res.error) return <div className="notice bad">{res.error}</div>;
+  const list = res.data || [];
+  if (!list.length) return <div className="note">This product set has no products.</div>;
+  return (
+    <>
+      <div className="hint" style={{ marginTop: 0 }}>{set.product_count && set.product_count > list.length ? `Showing ${list.length} of ${set.product_count.toLocaleString('en-IN')} products` : `${list.length} ${list.length === 1 ? 'product' : 'products'}`}</div>
+      <div className="set-products">
+        {list.map((p) => {
+          const sale = p.sale_price && p.sale_price !== p.price;
+          const oos = /out of stock/i.test(p.availability || '');
+          return (
+            <a key={p.id} className="set-product" href={p.url || undefined} target="_blank" rel="noreferrer" title={p.url ? `Opens ${p.url}` : undefined}>
+              <span className="img" style={{ backgroundImage: p.image_url ? `url("${p.image_url}")` : undefined }} />
+              <span className="nm">{p.name}</span>
+              <span className="pr">{sale ? <><b>{p.sale_price}</b> <s>{p.price}</s></> : p.price || '–'}</span>
+              <span className="meta">{[p.brand, oos ? 'Out of stock' : ''].filter(Boolean).join(' · ')}</span>
+            </a>
+          );
+        })}
+      </div>
     </>
   );
 }
