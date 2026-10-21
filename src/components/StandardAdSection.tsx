@@ -1,18 +1,39 @@
 'use client';
 import { ImagePlus, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { apiGet, apiPost, errorText } from '@/lib/client-api';
+import { apiGet, apiPost, apiPostBytes, errorText } from '@/lib/client-api';
 import { CTAS } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
-import type { FormState } from '@/lib/types';
+import type { FormState, PostMedia } from '@/lib/types';
+import { MediaModal } from './PostMedia';
 import { NormalPreview } from './AdPreview';
 import TrackingFields from './TrackingFields';
 import { Field, Loading, SearchSelect, Segmented, Select, TextInput, Toggle } from './ui';
 
 interface Page { id: string; name: string; website?: string; instagram_business_account?: { id: string; username?: string } }
-interface Post { id: string; text: string; image: string; type: string; time: string; link?: string }
+interface Post { id: string; text: string; image: string; type: string; time: string; link?: string; media?: PostMedia[] }
 
 const MAX_BYTES = 3 * 1024 * 1024;
+const MAX_VIDEO = 1_000_000_000;
+// Each piece goes through this app's server, which accepts up to 4.5 MB per request.
+const CHUNK = 3_500_000;
+
+/** A JPEG frame from about a third of the way into the video (Meta needs a thumbnail for video ads). */
+function frameOf(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+    v.onloadeddata = () => { v.currentTime = Math.min(1, (v.duration || 3) / 3); };
+    v.onseeked = () => {
+      const scale = Math.min(1, 1280 / Math.max(v.videoWidth || 1, v.videoHeight || 1));
+      const c = document.createElement('canvas');
+      c.width = Math.round((v.videoWidth || 640) * scale); c.height = Math.round((v.videoHeight || 640) * scale);
+      c.getContext('2d')?.drawImage(v, 0, 0, c.width, c.height);
+      resolve(c.toDataURL('image/jpeg', 0.85));
+    };
+    v.onerror = () => reject(new Error('This video can\u2019t be read in the browser. Use an MP4 (H.264) or MOV file.'));
+  });
+}
 
 function pageWebsite(p?: Page): string {
   const first = (p?.website || '').split(/[\s,]+/).find(Boolean);
@@ -20,7 +41,7 @@ function pageWebsite(p?: Page): string {
   return /^https?:\/\//i.test(first) ? first : `https://${first}`;
 }
 
-/** Normal (non-catalog) ad: upload an image, or promote an existing Facebook / Instagram post. */
+/** Normal (non-catalog) ad: upload an image or video, or promote an existing Facebook / Instagram post. */
 export default function StandardAdSection({ form, setAd, accountId, allowSkip, allowCatalog = false, preview = true, hideSetup = false }: {
   form: FormState;
   setAd: (p: Partial<FormState['ad']>) => void;
@@ -40,6 +61,8 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
   const [linkEdited, setLinkEdited] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [progress, setProgress] = useState(0);
+  const [playing, setPlaying] = useState<Post | null>(null);
 
   const posts = useAsync<Post[]>(
     ad.kind === 'POST' && ad.pageId && (ad.postSource === 'FACEBOOK' || ig?.id) ? `posts-${ad.pageId}-${ad.postSource}` : null,
@@ -69,17 +92,64 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ad.pageId, page?.website]);
 
+  // Meta processes an uploaded video before it can be used; check until it's ready.
+  useEffect(() => {
+    if (!ad.videoId || ad.videoStatus !== 'processing') return;
+    let stop = false;
+    const startedAt = Date.now();
+    const tick = async () => {
+      if (stop) return;
+      try {
+        const s = await apiGet<{ status: string }>('video-status', { video: ad.videoId });
+        if (stop) return;
+        if (s.status === 'ready') { setAd({ videoStatus: 'ready' }); return; }
+        if (s.status === 'error') { setAd({ videoStatus: 'error' }); return; }
+      } catch { /* try again */ }
+      if (Date.now() - startedAt < 10 * 60_000) setTimeout(tick, 4000);
+    };
+    const t = setTimeout(tick, 3000);
+    return () => { stop = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ad.videoId, ad.videoStatus]);
+
+  const onVideo = async (file: File) => {
+    if (file.size > MAX_VIDEO) { setUploadError('Video must be under 1 GB.'); return; }
+    const local = URL.createObjectURL(file);
+    setProgress(0);
+    setAd({ videoStatus: 'uploading', videoUrl: local, videoId: '', imageHash: '', imageUrl: '', imageName: file.name });
+    try {
+      const thumb = await frameOf(local);
+      const img = await apiPost<{ hash: string; url: string }>('upload-image', { account: accountId, name: `${file.name}-thumbnail.jpg`, bytes: thumb.split(',')[1] });
+      setAd({ imageHash: img.hash, imageUrl: thumb });
+      const s = await apiPost<{ upload_session_id: string; video_id: string; start_offset: string; end_offset: string }>('upload-video', { account: accountId, phase: 'start', size: file.size });
+      let start = Number(s.start_offset); let end = Number(s.end_offset);
+      while (start < end) {
+        const stopAt = Math.min(end, start + CHUNK);
+        const r = await apiPostBytes<{ start_offset: string; end_offset: string }>('upload-video-chunk', { account: accountId, session: s.upload_session_id, offset: String(start) }, file.slice(start, stopAt));
+        start = Number(r.start_offset); end = Number(r.end_offset);
+        setProgress(Math.min(1, start / file.size));
+      }
+      await apiPost('upload-video', { account: accountId, phase: 'finish', session: s.upload_session_id, name: file.name });
+      setProgress(1);
+      setAd({ videoId: s.video_id, videoStatus: 'processing' });
+    } catch (e) {
+      setUploadError(errorText(e));
+      setAd({ videoStatus: '', videoId: '', videoUrl: '', imageHash: '', imageUrl: '', imageName: '' });
+    }
+  };
+
   const onFile = async (file?: File) => {
     if (!file) return;
     setUploadError('');
-    if (!/^image\/(jpeg|png)$/.test(file.type)) { setUploadError('Use a JPG or PNG image.'); return; }
+    if (/^video\/(mp4|quicktime)$/.test(file.type)) { await onVideo(file); return; }
+    if (!/^image\/(jpeg|png)$/.test(file.type)) { setUploadError('Use a JPG or PNG image, or an MP4 or MOV video.'); return; }
     if (file.size > MAX_BYTES) { setUploadError('Image must be under 3 MB.'); return; }
     setUploading(true);
     try {
       const dataUrl: string = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(new Error('Could not read the file')); r.readAsDataURL(file); });
       const bytes = dataUrl.split(',')[1];
       const img = await apiPost<{ hash: string; url: string }>('upload-image', { account: accountId, name: file.name, bytes });
-      setAd({ imageHash: img.hash, imageUrl: dataUrl, imageName: file.name });
+      setAd({ imageHash: img.hash, imageUrl: dataUrl, imageName: file.name, videoId: '', videoStatus: '', videoUrl: '' });
     } catch (e) {
       setUploadError(errorText(e));
     } finally {
@@ -136,12 +206,21 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
 
           {ad.kind === 'UPLOAD' ? (
             <>
-              <Field label="Image" hint="JPG or PNG, under 3 MB. 1080×1080 (1:1) works across Feed, Stories and Reels.">
+              <Field label="Image or video" hint="Image: JPG or PNG under 3 MB. Video: MP4 or MOV up to 1 GB. 1:1 or 4:5 works across Feed, Stories and Reels.">
                 <label className="upload">
-                  <input type="file" accept="image/jpeg,image/png" onChange={(e) => onFile(e.target.files?.[0])} style={{ display: 'none' }} />
+                  <input type="file" accept="image/jpeg,image/png,video/mp4,video/quicktime" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} style={{ display: 'none' }} disabled={uploading || ad.videoStatus === 'uploading'} />
                   {ad.imageUrl ? <img src={ad.imageUrl} alt="" /> : <ImagePlus size={22} strokeWidth={1.6} />}
-                  <span>{uploading ? 'Uploading to Meta…' : ad.imageName ? `${ad.imageName} · change` : 'Choose an image'}</span>
+                  <span>
+                    {uploading ? 'Uploading image to Meta\u2026'
+                      : ad.videoStatus === 'uploading' ? `Uploading video to Meta\u2026 ${Math.round(progress * 100)}%`
+                      : ad.imageName ? `${ad.imageName} \u00b7 change`
+                      : 'Choose an image or video'}
+                  </span>
                 </label>
+                {ad.videoStatus === 'uploading' ? <div className="progress" aria-label="Upload progress"><i style={{ width: `${Math.round(progress * 100)}%` }} /></div> : null}
+                {ad.videoStatus === 'processing' ? <div className="hint">Meta is processing the video. This usually takes under a minute; you can keep editing.</div> : null}
+                {ad.videoStatus === 'ready' ? <div className="hint" style={{ color: 'var(--ok)' }}>Video ready on Meta.</div> : null}
+                {ad.videoStatus === 'error' ? <div className="notice bad" style={{ marginTop: 8 }}>Meta couldn&apos;t process this video. Upload a different file.</div> : null}
                 {uploadError ? <div className="notice bad" style={{ marginTop: 8 }}>{uploadError}</div> : null}
               </Field>
               <Field label="Primary text">
@@ -172,13 +251,24 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
                   <div className="note">No recent posts found.</div>
                 ) : (
                   <div className="post-grid" role="radiogroup" aria-label="Posts">
-                    {posts.data.map((p) => (
-                      <button key={p.id} type="button" role="radio" aria-checked={ad.postId === p.id} className={`post ${ad.postId === p.id ? 'on' : ''}`} onClick={() => setAd({ postId: p.id, postPreview: p.image })}>
-                        <span className="thumb" style={{ backgroundImage: p.image ? `url("${p.image}")` : undefined }}>{p.type === 'VIDEO' || p.type === 'REELS' ? <Play size={14} fill="#fff" color="#fff" /> : null}</span>
-                        <span className="cap">{p.text ? p.text.slice(0, 70) : 'No caption'}</span>
-                        <span className="when">{p.time ? new Date(p.time).toLocaleDateString('en-IN') : ''}</span>
-                      </button>
-                    ))}
+                    {posts.data.map((p) => {
+                      const pick = () => setAd({ postId: p.id, postPreview: p.image, postMedia: p.media || [] });
+                      const isVideo = (p.media || []).some((m) => m.type === 'video');
+                      const many = (p.media || []).length > 1;
+                      return (
+                        <div key={p.id} role="radio" tabIndex={0} aria-checked={ad.postId === p.id} className={`post ${ad.postId === p.id ? 'on' : ''}`} onClick={pick} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}>
+                          <span className="thumb" style={{ backgroundImage: p.image ? `url("${p.image}")` : undefined }}>
+                            {isVideo || many ? (
+                              <button type="button" className="play-chip" onClick={(e) => { e.stopPropagation(); setPlaying(p); }} aria-label={isVideo ? 'Play video' : 'View all items'}>
+                                {isVideo ? <><Play size={12} fill="#fff" color="#fff" /> Play</> : `View ${p.media!.length}`}
+                              </button>
+                            ) : null}
+                          </span>
+                          <span className="cap">{p.text ? p.text.slice(0, 70) : 'No caption'}</span>
+                          <span className="when">{p.time ? new Date(p.time).toLocaleDateString('en-IN') : ''}{p.type === 'REELS' ? ' · Reel' : isVideo ? ' · Video' : many ? ' · Carousel' : ''}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </Field>
@@ -191,6 +281,7 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
           </details>
 
           {preview ? <NormalPreview form={form} /> : null}
+          {playing?.media?.length ? <MediaModal media={playing.media} caption={playing.text} onClose={() => setPlaying(null)} /> : null}
         </>
       )}
     </div>
