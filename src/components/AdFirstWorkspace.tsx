@@ -21,19 +21,17 @@ import StandardAdSection from './StandardAdSection';
 type Step = 'AD' | 'DEST' | 'SETTINGS' | 'REVIEW';
 type AdType = 'CATALOG' | 'UPLOAD' | 'POST';
 interface Missing { key: string; label: string }
-interface Draft { form: FormState; step: Step; dest: Destination | null; type: AdType | null; savedAt: number }
 
 const AD_TYPES: { key: AdType; title: string; text: string; icon: ReactNode }[] = [
   { key: 'CATALOG', title: 'Catalog ad', text: 'Products from your catalog, picked for each shopper. Carousel or single.', icon: <LayoutGrid size={18} /> },
-  { key: 'UPLOAD', title: 'Image ad', text: 'One image with your own text, link and button.', icon: <ImageIcon size={18} /> },
+  { key: 'UPLOAD', title: 'Image or video ad', text: 'One image or video with your own text, link and button.', icon: <ImageIcon size={18} /> },
   { key: 'POST', title: 'Existing post', text: 'Promote a Facebook or Instagram post as it is.', icon: <Newspaper size={18} /> },
 ];
-
-const draftKey = (account: AdAccount) => `sr-adfirst-draft-${account.id}`;
 
 /**
  * "Start with an Ad" workspace: a sticky step bar on top (back, steps, continue), one step at a time in
  * the editor, the live preview and ad set summary on the right, and an action bar that says what's blocking.
+ * Nothing is stored in the browser.
  */
 export default function AdFirstWorkspace({ account, form, setForm, onDone, onExit, repeatOf }: {
   account: AdAccount;
@@ -46,48 +44,17 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
   repeatOf?: string;
 }) {
   const [step, setStep] = useState<Step>(repeatOf ? 'DEST' : 'AD');
-  const [type, setType] = useState<AdType | null>(repeatOf ? (form.ad.kind === 'CATALOG' || form.ad.kind === 'POST' ? form.ad.kind : 'UPLOAD') : null);
+  // An ad that arrives with content (repeat, or kept across an ad account switch) keeps its type.
+  const [type, setType] = useState<AdType | null>(repeatOf || form.ad.name ? (form.ad.kind === 'CATALOG' || form.ad.kind === 'POST' ? form.ad.kind : 'UPLOAD') : null);
   const [dest, setDest] = useState<Destination | null>(null);
   const [settingsMissing, setSettingsMissing] = useState<Missing[]>([{ key: 'settings', label: 'Ad set settings' }]);
-  const [restored, setRestored] = useState(false);
   const [catalogReady, setCatalogReady] = useState(false);
-  const loaded = useRef(false);
   const mainRef = useRef<HTMLDivElement>(null);
 
-  // Restore a saved draft once; then save as things change.
-  useEffect(() => {
-    if (repeatOf) { loaded.current = true; return; }
-    try {
-      const raw = localStorage.getItem(draftKey(account));
-      if (raw) {
-        const d = JSON.parse(raw) as Draft;
-        if (d?.form && (d.type || d.form.ad.name)) {
-          setForm({ ...defaultForm(), ...d.form, ad: { ...defaultForm().ad, ...d.form.ad, adFirst: true } });
-          setType(d.type); setDest(d.dest); setStep(d.step === 'REVIEW' ? 'DEST' : d.step || 'AD'); setRestored(true);
-        }
-      }
-    } catch { /* ignore broken drafts */ }
-    loaded.current = true;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account.id]);
-  useEffect(() => {
-    if (!loaded.current) return;
-    const t = setTimeout(() => {
-      try {
-        // Uploaded image data is too large to keep; the upload itself (hash) is kept.
-        const slim = { ...form, ad: { ...form.ad, imageUrl: '' } };
-        localStorage.setItem(draftKey(account), JSON.stringify({ form: slim, step, dest, type, savedAt: Date.now() } satisfies Draft));
-      } catch { /* storage full or unavailable */ }
-    }, 400);
-    return () => clearTimeout(t);
-  }, [form, step, dest, type, account]);
-
-  const clearDraft = () => { try { localStorage.removeItem(draftKey(account)); } catch { /* ignore */ } };
   const startFresh = () => {
-    clearDraft();
     const f = defaultForm();
     setForm({ ...f, ad: { ...f.ad, adFirst: true } });
-    setType(null); setDest(null); setStep('AD'); setRestored(false);
+    setType(null); setDest(null); setStep('AD');
   };
 
   const isCatalog = form.ad.kind === 'CATALOG';
@@ -165,7 +132,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
 
   const setAd = (p: Partial<FormState['ad']>) => setForm((f) => ({ ...f, ad: { ...f.ad, ...p } }));
   const mode: Mode = dest?.kind === 'NEW_CAMPAIGN' ? 'NEW' : dest?.kind === 'NEW_ADSET' ? 'EXISTING' : 'AD_ONLY';
-  const finish = (r: LaunchResult) => { clearDraft(); onDone(r, mode); };
+  const finish = (r: LaunchResult) => onDone(r, mode);
 
   const STEPS: { key: Step; title: string; sub: string }[] = [
     { key: 'AD', title: 'Ad', sub: type ? `${AD_TYPES.find((t) => t.key === type)?.title}${form.ad.name ? ` · ${form.ad.name}` : ''}` : 'Type, creative and text' },
@@ -227,9 +194,6 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
       </nav>
       {repeatOf ? (
         <div className="ws-draft">Same ad as the one you just added to <b>{repeatOf}</b>. Pick another campaign or ad set, or edit the ad first.</div>
-      ) : null}
-      {restored ? (
-        <div className="ws-draft">Draft restored from your last visit. <button type="button" className="btn-link" onClick={startFresh}>Start fresh</button></div>
       ) : null}
 
       <div className="ws-body">
@@ -419,7 +383,7 @@ function StructureMap({ account, form, dest }: { account: AdAccount; form: FormS
       level: 'Ad',
       isNew: true,
       name: form.ad.name || 'Your ad',
-      meta: form.ad.kind === 'CATALOG' ? `Catalog ad · ${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single'}` : form.ad.kind === 'POST' ? 'Existing post' : 'Image ad',
+      meta: form.ad.kind === 'CATALOG' ? `Catalog ad · ${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single'}` : form.ad.kind === 'POST' ? 'Existing post' : form.ad.videoId ? 'Video ad' : 'Image ad',
     },
   ];
   return (

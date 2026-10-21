@@ -29,7 +29,7 @@ const CHOICES = [
   { key: 'new', title: 'New Campaign + Ad Set', text: 'Create a brand-new campaign and its first ad set together.' },
   { key: 'existing', title: 'New Ad Set → Existing Campaign', text: 'Add a new ad set to a campaign you already have.' },
   { key: 'duplicate', title: 'Duplicate an Ad Set', text: "Copy an existing ad set's settings into a new or existing campaign." },
-  { key: 'adfirst', title: 'Start with an Ad', text: 'Create a catalog, image or post ad first, then choose where it runs.' },
+  { key: 'adfirst', title: 'Start with an Ad', text: 'Create a catalog, image, video or post ad first, then choose where it runs.' },
 ] as const;
 
 const adFirstForm = (): FormState => { const f = defaultForm(); return { ...f, ad: { ...f.ad, adFirst: true } }; };
@@ -52,18 +52,17 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
     if (window.location.hash === '#_=_') window.history.replaceState(null, '', window.location.pathname + window.location.search);
   }, []);
 
-  // Restore the last ad account, else take the first.
+  // Start on the first ad account (nothing is stored in the browser).
   useEffect(() => {
-    if (!accounts.data?.length || accountId) return;
-    let saved = '';
-    try { saved = localStorage.getItem('sr-ad-account') || ''; } catch { /* ignore */ }
-    setAccountId((accounts.data.find((a) => a.id === saved) || accounts.data[0]).id);
+    if (accounts.data?.length && !accountId) setAccountId(accounts.data[0].id);
   }, [accounts.data, accountId]);
+  // Shown after switching ad account mid-flow.
+  const [switched, setSwitched] = useState('');
 
   const account = useMemo(() => accounts.data?.find((a) => a.id === accountId), [accounts.data, accountId]);
 
   const startOver = () => {
-    setLastAd(null); setRepeatOf('');
+    setLastAd(null); setRepeatOf(''); setSwitched('');
     setView({ kind: 'home' });
     setForm(defaultForm());
     setCampaign(undefined);
@@ -71,17 +70,34 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
     window.scrollTo({ top: 0 });
   };
 
+  // Switching ad account keeps you in the flow you're in. What belongs to the old account
+  // (catalog, product set, dataset, saved audience, uploaded image or video, picked campaign or ad set) is cleared;
+  // the ad's name, Page, post, text and format are kept.
   const changeAccount = (id: string) => {
     if (id === accountId) return;
     setAccountId(id);
-    try { localStorage.setItem('sr-ad-account', id); } catch { /* ignore */ }
-    startOver();
+    setLastAd(null); setRepeatOf('');
+    const next = accounts.data?.find((a) => a.id === id);
+    const keepsWork = view.kind === 'ad-first' || view.kind === 'form' || view.kind === 'pick-campaign' || view.kind === 'pick-adset' || view.kind === 'dup-dest';
+    if (!keepsWork) { setView({ kind: 'home' }); setSwitched(''); return; }
+    setForm((f) => ({
+      ...f,
+      campaign: { ...f.campaign, catalogId: '' },
+      adset: { ...f.adset, productSetId: '', crossSellSourceSetId: '', pixelId: '', savedAudienceId: '', audienceType: f.adset.audienceType === 'SAVED' ? 'ADVANTAGE' : f.adset.audienceType },
+      ad: { ...f.ad, imageHash: '', imageUrl: '', imageName: '', videoId: '', videoStatus: '', videoUrl: '' },
+    }));
+    setCampaign(undefined);
+    if (view.kind === 'form' && view.mode === 'EXISTING') setView({ kind: 'pick-campaign', next: 'EXISTING' });
+    else if ((view.kind === 'form' && (view.mode === 'DUP_NEW' || view.mode === 'DUP_EXISTING')) || view.kind === 'dup-dest' || (view.kind === 'pick-campaign' && view.next === 'DUP_EXISTING')) { setSource(undefined); setView({ kind: 'pick-adset' }); }
+    setSwitched(next?.name || 'the new ad account');
+    window.scrollTo({ top: 0 });
   };
 
   const choose = (key: string) => {
     setFabOpen(false);
     setCampaign(undefined);
     setSource(undefined);
+    setSwitched('');
     if (key === 'new') { setForm(defaultForm()); setView({ kind: 'form', mode: 'NEW' }); }
     if (key === 'existing') { setForm(defaultForm()); setView({ kind: 'pick-campaign', next: 'EXISTING' }); }
     if (key === 'duplicate') { setView({ kind: 'pick-adset' }); }
@@ -103,7 +119,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
     setForm({
       ...f,
       campaign: { ...f.campaign, catalogEnabled: prev.campaign.catalogEnabled, catalogId: prev.campaign.catalogId, objective: prev.campaign.catalogEnabled ? 'OUTCOME_SALES' : f.campaign.objective },
-      adset: { ...f.adset, productSetId: prev.adset.productSetId },
+      adset: { ...f.adset, productSetId: prev.adset.productSetId, pixelId: prev.adset.pixelId },
       ad: { ...prev.ad, adFirst: true },
     });
     setRepeatOf(lastAd.adsetName || 'the last ad set');
@@ -149,6 +165,13 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
       {declined.length ? (
         <div className="notice warn" style={{ marginBottom: 16 }}>
           You didn&apos;t allow <b>{declined.join(', ')}</b>. Some options won&apos;t load. <a href="/api/auth/login">Log in again</a> to grant them.
+        </div>
+      ) : null}
+
+      {switched && account && view.kind !== 'home' && view.kind !== 'done' ? (
+        <div className="notice info switched" role="status">
+          <span>Switched to <b>{switched}</b>. Catalog, product set, dataset (pixel), saved audience and uploaded image or video were cleared because they belong to the previous ad account. Everything else in your ad is kept.</span>
+          <button type="button" className="btn-link" onClick={() => setSwitched('')}>Dismiss</button>
         </div>
       ) : null}
 
@@ -221,7 +244,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
         <AdFirstWorkspace key={`${account.id}-${wsKey}`} account={account} form={form} setForm={setForm} onDone={doneAdFirst} onExit={startOver} repeatOf={repeatOf || undefined} />
       ) : view.kind === 'form' ? (
         <LaunchForm
-          key={`${view.mode}-${campaign?.id || ''}-${source?.id || ''}`}
+          key={`${view.mode}-${campaign?.id || ''}-${source?.id || ''}-${account.id}`}
           mode={view.mode}
           account={account}
           form={form}
