@@ -108,7 +108,7 @@ export function ReviewPanel({ mode, account, form, ctx, campaign, source, produc
     const ad = form.ad;
     rows.push(['Ad', ad.kind === 'POST'
       ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post`
-      : `New ad with uploaded image${ad.imageName ? ` (${ad.imageName})` : ''}, "${CTAS.find((x) => x.key === ad.cta)?.label}"`]);
+      : `New ${ad.videoId ? 'video' : 'image'} ad${ad.imageName ? ` (${ad.imageName})` : ''}, "${CTAS.find((x) => x.key === ad.cta)?.label}"`]);
     if (ad.kind === 'UPLOAD') rows.push(['Website', ad.link]);
     rows.push(['URL parameters', buildUrlTags(ad.urlTags || {}) || 'None']);
   }

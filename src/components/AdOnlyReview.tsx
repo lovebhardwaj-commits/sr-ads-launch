@@ -44,7 +44,7 @@ export function AdOnlyPanel({ account, form, target, onClose, onDone, backLabel 
     ['Ad name', ad.name || `${target.name} - ${isCatalog ? 'Catalog ad' : 'Ad'}`],
     ['Ad', isCatalog
       ? `${ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} from catalog, "${cta}"`
-      : ad.kind === 'POST' ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post` : `New ad with uploaded image${ad.imageName ? ` (${ad.imageName})` : ''}, "${cta}"`],
+      : ad.kind === 'POST' ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post` : `New ${ad.videoId ? 'video' : 'image'} ad${ad.imageName ? ` (${ad.imageName})` : ''}, "${cta}"`],
   ];
   if (isCatalog) rows.push(['Products', targetSet ? 'From the ad set\u2019s product set' : 'From the product set chosen for the ad (ad-level catalog)']);
   if (isCatalog) rows.push(['Clicks go to', ad.destination === 'APP_WEB' ? 'App, website as backup' : 'Website']);
