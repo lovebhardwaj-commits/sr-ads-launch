@@ -71,7 +71,7 @@ export function readHealth(h: any, pixelId: string): { rows: Row[]; ready: boole
 
   // Pixel link
   if (!pixelId) {
-    rows.push({ state: 'fail', title: 'Pick the dataset above', detail: 'Catalog ads use its ViewContent, AddToCart and Purchase events to choose products.' });
+    rows.push({ state: 'fail', title: 'Pick the dataset (pixel) above', detail: 'Catalog ads use its ViewContent, AddToCart and Purchase events to choose products.' });
     ready = false;
   } else if (isUnavailable(h.sources)) {
     rows.push({ state: 'warn', title: "Couldn't confirm the pixel is linked to this catalog", detail: h.sources.unavailable });
@@ -232,9 +232,9 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
       </Field>
 
       {showHealth && onPixel ? (
-        <Field label="Dataset" hint="The pixel that sends ViewContent, AddToCart and Purchase from your store. It must be linked to the catalog.">
+        <Field label="Dataset (pixel)" hint="The pixel that sends ViewContent, AddToCart and Purchase from your store. It must be linked to the catalog.">
           {pixelsLoading ? <Loading text="Loading datasets…" /> : (
-            <Select value={pixelId} onChange={onPixel} placeholder="Select a dataset..." options={(pixels || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
+            <Select value={pixelId} onChange={onPixel} placeholder="Select a dataset (pixel)..." options={(pixels || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
           )}
         </Field>
       ) : null}
