@@ -29,7 +29,7 @@ const AD_TYPES: { key: AdType; title: string; text: string; icon: ReactNode }[] 
 ];
 
 /**
- * "Start with an Ad" workspace: a sticky step bar on top (back, steps, continue), one step at a time in
+ * "Start with an Ad" workspace: a sticky step bar on top (back icon, steps, continue), one step at a time in
  * the editor, the live preview and ad set summary on the right, and an action bar that says what's blocking.
  * Nothing is stored in the browser. `catalogOnly` (Catalog Ads > Create ad) offers catalog ads only.
  */
@@ -44,7 +44,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
   repeatOf?: string;
   /** Catalog Ads > Create ad: catalog ads only (no image/video or existing post) */
   catalogOnly?: boolean;
-  /** Label of the back button on the first step */
+  /** Tooltip of the back icon on the first step */
   exitLabel?: string;
 }) {
   const [step, setStep] = useState<Step>(repeatOf ? 'DEST' : 'AD');
@@ -171,13 +171,13 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
 
   return (
     <div className="ws">
-      {/* Step bar: back, the four steps, continue */}
+      {/* Step bar: back icon, the four steps, continue */}
       <nav className="ws-bar" aria-label="Steps">
         {prev || onExit ? (
-          <button type="button" className="btn-ghost ws-back" onClick={() => (prev ? go(prev) : onExit?.())}>
-            <ArrowLeft size={14} /> {prev ? 'Back' : exitLabel}
+          <button type="button" className="icon-btn bordered ws-back" onClick={() => (prev ? go(prev) : onExit?.())} aria-label={prev ? 'Back' : exitLabel} title={prev ? 'Back' : exitLabel}>
+            <ArrowLeft size={16} />
           </button>
-        ) : <span className="ws-next-spacer" />}
+        ) : null}
         <ol className="ws-steps">
           {STEPS.map((s, i) => {
             const skipped = s.key === 'SETTINGS' && !!dest && !needsSettings;
@@ -311,10 +311,9 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
           </>
         ) : null}
 
-        {/* Action bar */}
+        {/* Action bar: what's still needed, and continue */}
         {step !== 'REVIEW' ? (
           <div className="sticky-bar ws-foot">
-            {prev || onExit ? <button type="button" className="btn-ghost" onClick={() => (prev ? go(prev) : onExit?.())}><ArrowLeft size={14} /> {prev ? 'Back' : exitLabel}</button> : null}
             <span className="sticky-text">
               {blocking.length ? <>Still needed: {blocking.map((m) => <button type="button" key={m.key} className="need" onClick={() => jumpTo(m)} title="Go to this field">{m.label}</button>)}</> : <span className="ready">Ready to continue</span>}
             </span>
