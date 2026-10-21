@@ -269,13 +269,13 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             </Field>
           );
           const dataset = ctx.isCatalog ? (
-            <Field label="Dataset" hint="Chosen in the Catalog card, where its link to the catalog is checked.">
+            <Field label="Dataset (pixel)" hint="Chosen in the Catalog card, where its link to the catalog is checked.">
               <TextInput readOnly value={(() => { const px = pixels.data?.find((p) => p.id === a.pixelId); return px ? `${px.name} (${px.id})` : 'Select it in the Catalog card'; })()} aria-label="Dataset" />
             </Field>
           ) : goal.pixel ? (
-            <Field label="Dataset">
+            <Field label="Dataset (pixel)">
               {pixels.loading ? <Loading text="Loading datasets…" /> : pixels.error ? <div className="notice bad">{pixels.error}</div> : (
-                <Select value={a.pixelId} onChange={(v) => up('adset', { pixelId: v })} placeholder="Select a dataset..." options={(pixels.data || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
+                <Select value={a.pixelId} onChange={(v) => up('adset', { pixelId: v })} placeholder="Select a dataset (pixel)..." options={(pixels.data || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
               )}
             </Field>
           ) : null;
