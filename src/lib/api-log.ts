@@ -16,7 +16,6 @@ export interface LogGroup {
   calls: GraphCall[];
 }
 
-const KEY = 'sr-api-log';
 const MAX_GROUPS = 100;
 const MAX_OUTPUT_CHARS = 40_000;
 
@@ -24,19 +23,8 @@ interface State { groups: LogGroup[]; open: boolean }
 let state: State = { groups: [], open: false };
 const listeners = new Set<() => void>();
 
-if (typeof window !== 'undefined') {
-  try { state = { ...state, groups: JSON.parse(sessionStorage.getItem(KEY) || '[]') }; } catch { /* ignore */ }
-}
-
-function persist() {
-  try {
-    sessionStorage.setItem(KEY, JSON.stringify(state.groups));
-  } catch {
-    // Storage full: keep the newest half and try once more.
-    state = { ...state, groups: state.groups.slice(0, Math.floor(state.groups.length / 2)) };
-    try { sessionStorage.setItem(KEY, JSON.stringify(state.groups)); } catch { /* give up quietly */ }
-  }
-}
+// Kept in memory only: nothing is stored in the browser, so the log clears on reload.
+function persist() { /* intentionally nothing */ }
 
 function emit() { listeners.forEach((l) => l()); }
 

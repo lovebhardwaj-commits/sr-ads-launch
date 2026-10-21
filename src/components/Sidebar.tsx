@@ -21,6 +21,7 @@ function Logo({ compact }: { compact: boolean }) {
 /**
  * App shell matching Fastrr Ads: sidebar with the logo and a single "Launch Ads" item,
  * top bar with breadcrumb and actions. `user` is absent on the login screen.
+ * Sidebar and theme choices live in memory only (nothing is stored in the browser).
  */
 export default function AppShell({ user, children }: { user?: { name: string; picture?: string }; children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -30,19 +31,16 @@ export default function AppShell({ user, children }: { user?: { name: string; pi
 
   useEffect(() => {
     setTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
-    try { setCollapsed(localStorage.getItem('sr-side') === 'collapsed'); } catch { /* ignore */ }
   }, []);
 
   const flipTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     document.documentElement.dataset.theme = next;
-    try { localStorage.setItem('sr-theme', next); } catch { /* storage unavailable */ }
   };
   const flipSide = () => {
     const next = !collapsed;
     setCollapsed(next);
-    try { localStorage.setItem('sr-side', next ? 'collapsed' : 'open'); } catch { /* ignore */ }
   };
 
   return (
