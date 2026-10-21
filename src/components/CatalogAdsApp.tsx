@@ -1,5 +1,5 @@
 'use client';
-import { ArrowDown, ArrowUp, RefreshCw, Search } from 'lucide-react';
+import { ArrowDown, ArrowUp, LineChart, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '@/lib/client-api';
 import { currencySymbol } from '@/lib/constants';
@@ -58,6 +58,8 @@ export default function CatalogAdsApp({ declined }: { declined: string[] }) {
   const [range, setRange] = useState<Range>(() => presetRange('last_7d'));
   const [tick, setTick] = useState(0);
   const [tab, setTabState] = useState<Tab>('overview');
+  // Overview waits for "Check Performance"; the other tabs load on their own (and count as checked).
+  const [checked, setChecked] = useState(false);
   // Create Ad state
   const [form, setForm] = useState<FormState>(() => adFirstForm({ catalogId: '', productSetId: '' }));
   const [wsKey, setWsKey] = useState(0);
@@ -81,7 +83,9 @@ export default function CatalogAdsApp({ declined }: { declined: string[] }) {
   const sym = currencySymbol(account?.currency || 'INR');
   const money = (n: number) => `${sym}${n.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
 
-  const perf = useAsync<Row[]>(account && tab !== 'create' ? `catperf-${account.id}-${range.since}-${range.until}-${tick}` : null, () => apiGet('catalog-performance', { account: account!.id, since: range.since, until: range.until }));
+  const wantPerf = !!account && tab !== 'create' && (tab !== 'overview' || checked);
+  useEffect(() => { if (tab === 'ads' || tab === 'sets') setChecked(true); }, [tab]);
+  const perf = useAsync<Row[]>(wantPerf ? `catperf-${account!.id}-${range.since}-${range.until}-${tick}` : null, () => apiGet('catalog-performance', { account: account!.id, since: range.since, until: range.until }));
 
   const changeAccount = (id: string) => {
     if (id === accountId) return;
@@ -117,12 +121,24 @@ export default function CatalogAdsApp({ declined }: { declined: string[] }) {
         {tab !== 'create' ? (
           <div className="cat-range">
             <DateRange value={range} onChange={setRange} />
-            <button type="button" className="icon-btn bordered" aria-label="Refresh" title="Refresh" onClick={() => setTick((n) => n + 1)}><RefreshCw size={15} /></button>
+            <button type="button" className="icon-btn bordered" aria-label="Refresh" title="Refresh" onClick={() => { setChecked(true); setTick((n) => n + 1); }}><RefreshCw size={15} /></button>
           </div>
         ) : null}
       </div>
 
-      {!account ? null : tab === 'overview' ? (
+      {!account ? null : tab === 'overview' && !checked ? (
+        <div className="card cat-empty">
+          <span className="cat-empty-ic"><LineChart size={22} /></span>
+          <h3>Ready to compare performance</h3>
+          <p>See how your catalog ads stack up against your other ads over a chosen window.</p>
+          <ol>
+            <li><span>1</span> Pick an ad account</li>
+            <li><span>2</span> Choose a date range</li>
+            <li><span>3</span> Click &ldquo;Check Performance&rdquo;</li>
+          </ol>
+          <button type="button" className="btn-primary" onClick={() => setChecked(true)}>Check Performance</button>
+        </div>
+      ) : tab === 'overview' ? (
         <Overview perf={perf} money={money} range={range} />
       ) : tab === 'ads' ? (
         <CatalogAdsTable perf={perf} money={money} range={range} />
