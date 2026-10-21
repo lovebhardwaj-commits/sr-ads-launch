@@ -57,9 +57,13 @@ export function defaultForm(catalog = false): FormState {
       imageHash: '',
       imageUrl: '',
       imageName: '',
+      videoId: '',
+      videoStatus: '',
+      videoUrl: '',
       postSource: 'FACEBOOK',
       postId: '',
       postPreview: '',
+      postMedia: [],
       name: '',
       pageId: '',
       instagramUserId: '',
@@ -256,7 +260,12 @@ export function validateAd(form: FormState, isCatalog: boolean, withCatalog = fa
   }
   if (!ad.pageId) m.push({ key: 'ad.pageId', label: 'Facebook Page' });
   if (ad.kind === 'UPLOAD') {
-    if (!ad.imageHash) m.push({ key: 'ad.imageHash', label: 'Image' });
+    if (ad.videoId || ad.videoStatus) {
+      if (ad.videoStatus === 'uploading') m.push({ key: 'ad.video', label: 'Video still uploading' });
+      else if (ad.videoStatus === 'processing') m.push({ key: 'ad.video', label: 'Video still processing on Meta' });
+      else if (ad.videoStatus === 'error') m.push({ key: 'ad.video', label: 'Video failed on Meta: upload another' });
+      if (!ad.imageHash) m.push({ key: 'ad.imageHash', label: 'Video thumbnail' });
+    } else if (!ad.imageHash) m.push({ key: 'ad.imageHash', label: 'Image or video' });
     if (!ad.message.trim()) m.push({ key: 'ad.message', label: 'Primary text' });
     if (!validUrl) m.push({ key: 'ad.link', label: 'Website URL' });
   }

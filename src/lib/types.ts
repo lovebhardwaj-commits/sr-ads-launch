@@ -94,7 +94,7 @@ export interface FormState {
     crossSellSourceSetId: string;
   };
   ad: {
-    /** CATALOG = catalog template ad; UPLOAD = new ad from an uploaded image; POST = existing FB/IG post; NONE = no ad */
+    /** CATALOG = catalog template ad; UPLOAD = new ad from an uploaded image or video; POST = existing FB/IG post; NONE = no ad */
     kind: 'CATALOG' | 'UPLOAD' | 'POST' | 'NONE';
     /** Duplicates: copy the original ad set's ads, and/or add a new ad */
     copyOriginal: boolean;
@@ -104,9 +104,15 @@ export interface FormState {
     imageHash: string;
     imageUrl: string;
     imageName: string;
+    /** Uploaded video (image/video ad): its Meta id, processing status and a local preview URL; imageHash is its thumbnail */
+    videoId: string;
+    videoStatus: '' | 'uploading' | 'processing' | 'ready' | 'error';
+    videoUrl: string;
     postSource: 'FACEBOOK' | 'INSTAGRAM';
     postId: string;
     postPreview: string;
+    /** The chosen post's media, for a playable preview (videos, carousel items) */
+    postMedia: PostMedia[];
     name: string;
     pageId: string;
     instagramUserId: string;
@@ -126,6 +132,8 @@ export interface FormState {
   };
 }
 
+export interface PostMedia { type: 'image' | 'video'; url: string; poster?: string }
+
 export interface UrlTags { source: string; medium: string; campaign: string; content: string; term: string }
 
 /** What the current screen is building. Derived from mode + chosen campaign. */
@@ -144,7 +152,7 @@ export interface FlowContext {
   needsAd: boolean;
   /** Catalog ad inside a campaign without a catalog (ad-level catalog and product set) */
   adLevelCatalog: boolean;
-  /** A normal (non-catalog) ad will be created: uploaded image or existing post */
+  /** A normal (non-catalog) ad will be created: uploaded image/video or existing post */
   needsStandardAd: boolean;
   /** Duplicate: copy the original ad set's ads */
   copyAds: boolean;
