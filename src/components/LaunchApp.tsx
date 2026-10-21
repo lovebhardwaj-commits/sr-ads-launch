@@ -3,7 +3,7 @@ import { ChevronLeft, List, Rocket } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '@/lib/client-api';
 import { goalsFor } from '@/lib/constants';
-import { defaultForm, formFromAdset } from '@/lib/form';
+import { adFirstForm, clearAccountBound, defaultForm, formFromAdset, repeatForm } from '@/lib/form';
 import { useAsync } from '@/lib/hooks';
 import type { AdAccount, AdsetLite, CampaignLite, FormState, LaunchResult, Mode } from '@/lib/types';
 import AdFirstWorkspace from './AdFirstWorkspace';
@@ -11,7 +11,7 @@ import LaunchForm from './LaunchForm';
 import { AdsetPicker, CampaignPicker } from './Pickers';
 import LegalLinks from './LegalLinks';
 import ResultView from './ResultView';
-import { Loading, SearchSelect } from './ui';
+import AccountPicker from './AccountPicker';
 
 type View =
   | { kind: 'home' }
@@ -22,17 +22,12 @@ type View =
   | { kind: 'form'; mode: Mode }
   | { kind: 'done'; result: LaunchResult; mode: Mode };
 
-/** Meta account_status codes; active (1) shows nothing. */
-const ACCOUNT_STATUS: Record<number, string> = { 2: 'Disabled', 3: 'Unsettled', 7: 'Pending review', 8: 'Pending settlement', 9: 'In grace period', 100: 'Pending closure', 101: 'Closed' };
-
 const CHOICES = [
   { key: 'new', title: 'New Campaign + Ad Set', text: 'Create a brand-new campaign and its first ad set together.' },
   { key: 'existing', title: 'New Ad Set → Existing Campaign', text: 'Add a new ad set to a campaign you already have.' },
   { key: 'duplicate', title: 'Duplicate an Ad Set', text: "Copy an existing ad set's settings into a new or existing campaign." },
   { key: 'adfirst', title: 'Start with an Ad', text: 'Create a catalog, image, video or post ad first, then choose where it runs.' },
 ] as const;
-
-const adFirstForm = (): FormState => { const f = defaultForm(); return { ...f, ad: { ...f.ad, adFirst: true } }; };
 
 export default function LaunchApp({ declined }: { declined: string[] }) {
   const accounts = useAsync<AdAccount[]>('accounts', () => apiGet('adaccounts'));
@@ -80,12 +75,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
     const next = accounts.data?.find((a) => a.id === id);
     const keepsWork = view.kind === 'ad-first' || view.kind === 'form' || view.kind === 'pick-campaign' || view.kind === 'pick-adset' || view.kind === 'dup-dest';
     if (!keepsWork) { setView({ kind: 'home' }); setSwitched(''); return; }
-    setForm((f) => ({
-      ...f,
-      campaign: { ...f.campaign, catalogId: '' },
-      adset: { ...f.adset, productSetId: '', crossSellSourceSetId: '', pixelId: '', savedAudienceId: '', audienceType: f.adset.audienceType === 'SAVED' ? 'ADVANTAGE' : f.adset.audienceType },
-      ad: { ...f.ad, imageHash: '', imageUrl: '', imageName: '', videoId: '', videoStatus: '', videoUrl: '' },
-    }));
+    setForm(clearAccountBound);
     setCampaign(undefined);
     if (view.kind === 'form' && view.mode === 'EXISTING') setView({ kind: 'pick-campaign', next: 'EXISTING' });
     else if ((view.kind === 'form' && (view.mode === 'DUP_NEW' || view.mode === 'DUP_EXISTING')) || view.kind === 'dup-dest' || (view.kind === 'pick-campaign' && view.next === 'DUP_EXISTING')) { setSource(undefined); setView({ kind: 'pick-adset' }); }
@@ -114,14 +104,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
   // Same ad, fresh destination: keep the ad (and its catalog and product set), reset campaign and ad set settings.
   const repeatAd = () => {
     if (!lastAd) return;
-    const f = adFirstForm();
-    const prev = lastAd.form;
-    setForm({
-      ...f,
-      campaign: { ...f.campaign, catalogEnabled: prev.campaign.catalogEnabled, catalogId: prev.campaign.catalogId, objective: prev.campaign.catalogEnabled ? 'OUTCOME_SALES' : f.campaign.objective },
-      adset: { ...f.adset, productSetId: prev.adset.productSetId, pixelId: prev.adset.pixelId },
-      ad: { ...prev.ad, adFirst: true },
-    });
+    setForm(repeatForm(lastAd.form));
     setRepeatOf(lastAd.adsetName || 'the last ad set');
     setWsKey((k) => k + 1);
     setView({ kind: 'ad-first' });
@@ -142,24 +125,7 @@ export default function LaunchApp({ declined }: { declined: string[] }) {
             <p className="page-sub">Launch campaigns, ad sets and ads straight to Facebook — pre-filled for Indian D2C, every field editable.</p>
           </div>
         )}
-        <div className="account-pick">
-          <span className="label">Ad account</span>
-          {accounts.loading ? <Loading text="Loading ad accounts…" /> : accounts.error ? (
-            <div className="notice bad">{accounts.error}</div>
-          ) : accounts.data && !accounts.data.length ? (
-            <div className="notice warn">No ad accounts found for this Facebook login. Ask a business admin to give you access to one.</div>
-          ) : (
-            <SearchSelect
-              value={accountId}
-              onChange={changeAccount}
-              ariaLabel="Ad account"
-              noun="ad accounts"
-              placeholder="Select an ad account..."
-              searchPlaceholder={`Search ${(accounts.data || []).length.toLocaleString('en-IN')} ad accounts by name or ID`}
-              options={(accounts.data || []).map((a) => ({ key: a.id, label: a.name || a.account_id, meta: [a.account_id, ACCOUNT_STATUS[a.account_status ?? 1]].filter(Boolean).join(' · ') }))}
-            />
-          )}
-        </div>
+        <AccountPicker accounts={accounts} value={accountId} onChange={changeAccount} />
       </div>
 
       {declined.length ? (

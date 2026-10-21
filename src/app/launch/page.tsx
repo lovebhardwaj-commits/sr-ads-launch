@@ -14,7 +14,7 @@ export default async function LaunchPage() {
   const session = await getSession();
   if (!session) redirect('/login');
   return (
-    <AppShell user={{ name: session.name, picture: session.picture }}>
+    <AppShell section="launch" user={{ name: session.name, picture: session.picture }}>
       <LaunchApp declined={session.declined || []} />
       <ApiLogPanel />
     </AppShell>
