@@ -14,16 +14,16 @@ const RELEVANCE: Record<string, string> = { USED: 'Used in this ad account', LIN
 type State = 'pass' | 'warn' | 'fail' | 'info';
 interface Row { state: State; title: string; detail?: string; action?: 'link' }
 
-type SetLite = { id: string; name: string; product_count?: number; products?: { data?: { id: string; image_url?: string }[] } };
+export type SetLite = { id: string; name: string; product_count?: number; products?: { data?: { id: string; image_url?: string }[] } };
 
-function SetThumbs({ s }: { s: SetLite }) {
+export function SetThumbs({ s }: { s: SetLite }) {
   const imgs = (s.products?.data || []).map((p) => p.image_url).filter(Boolean).slice(0, 4) as string[];
   if (!imgs.length) return null;
   return <span className="set-thumbs" aria-hidden>{imgs.map((src, i) => <img key={i} src={src} alt="" loading="lazy" />)}</span>;
 }
 
 /** Out-of-stock count and a sample of product links, for the chosen product set. */
-function SetChecks({ setId }: { setId: string }) {
+export function SetChecks({ setId }: { setId: string }) {
   const res = useAsync<{ outOfStock: number | null; links: { id: string; name: string; url?: string; ok: boolean; reason: string }[]; noUrl: number }>(`set-health-${setId}`, () => apiGet('set-health', { set: setId }));
   if (res.loading) return <div className="set-checks"><Loading text="Checking products and links…" /></div>;
   if (res.error || !res.data) return <div className="set-checks"><div className="health-row warn"><span className="icon"><AlertTriangle size={16} /></span><div><div className="t">Couldn&apos;t check this product set</div><div className="d">{res.error}</div></div></div></div>;
