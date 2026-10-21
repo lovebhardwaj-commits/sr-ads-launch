@@ -9,6 +9,7 @@ import type { AdAccount, FormState, LaunchResult, Mode } from '@/lib/types';
 import AdPreview from './AdPreview';
 import AdSection from './AdSection';
 import AdsetFacts from './AdsetFacts';
+import { Field, Select } from './ui';
 import { AdOnlyPanel } from './AdOnlyReview';
 import CatalogPanel from './CatalogPanel';
 import DestinationTree, { adsetBudget, type Destination } from './DestinationTree';
@@ -32,7 +33,7 @@ const draftKey = (account: AdAccount) => `sr-adfirst-draft-${account.id}`;
 
 /**
  * "Start with an Ad" workspace: a sticky step bar on top (back, steps, continue), one step at a time in
- * the editor, the live preview and destination summary on the right, and an action bar that says what's blocking.
+ * the editor, the live preview and ad set summary on the right, and an action bar that says what's blocking.
  */
 export default function AdFirstWorkspace({ account, form, setForm, onDone, onExit, repeatOf }: {
   account: AdAccount;
@@ -41,7 +42,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
   onDone: (r: LaunchResult, mode: Mode) => void;
   /** Leave the workspace (back to all launch options) */
   onExit: () => void;
-  /** Reusing the ad just launched: start on Destination; name of the ad set it went into */
+  /** Reusing the ad just launched: start on the Ad set step; name of the ad set it went into */
   repeatOf?: string;
 }) {
   const [step, setStep] = useState<Step>(repeatOf ? 'DEST' : 'AD');
@@ -49,6 +50,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
   const [dest, setDest] = useState<Destination | null>(null);
   const [settingsMissing, setSettingsMissing] = useState<Missing[]>([{ key: 'settings', label: 'Ad set settings' }]);
   const [restored, setRestored] = useState(false);
+  const [catalogReady, setCatalogReady] = useState(false);
   const loaded = useRef(false);
   const mainRef = useRef<HTMLDivElement>(null);
 
@@ -90,9 +92,16 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
 
   const isCatalog = form.ad.kind === 'CATALOG';
   const fit = { isCatalog, catalogId: form.campaign.catalogId };
-  const adMissing = useMemo<Missing[]>(() => (type ? validateAd(form, isCatalog, true) : [{ key: 'ad.type', label: 'Ad type' }]), [form, isCatalog, type]);
+  const adMissing = useMemo<Missing[]>(() => {
+    if (!type) return [{ key: 'ad.type', label: 'Ad type' }];
+    const m: Missing[] = validateAd(form, isCatalog, true);
+    // Catalog ads need a dataset (pixel) linked to the catalog; checked in the Products card.
+    if (isCatalog && !form.adset.pixelId) m.push({ key: 'adset.pixelId', label: 'Dataset (pixel)' });
+    if (isCatalog && form.adset.pixelId && form.adset.productSetId && !catalogReady) m.push({ key: 'catalog.ready', label: 'Catalog readiness' });
+    return m;
+  }, [form, isCatalog, type, catalogReady]);
   const needsSettings = !!dest && dest.kind !== 'ADSET';
-  const destMissing: Missing[] = dest ? [] : [{ key: 'dest', label: 'Where the ad goes' }];
+  const destMissing: Missing[] = dest ? [] : [{ key: 'dest', label: 'Ad set' }];
 
   const reach: Record<Step, boolean> = {
     AD: true,
@@ -147,20 +156,27 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productSets.data]);
 
+  // One dataset (pixel) in the account: use it.
+  useEffect(() => {
+    if (pixels.data?.length === 1 && !form.adset.pixelId) setForm((f) => ({ ...f, adset: { ...f.adset, pixelId: pixels.data![0].id } }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pixels.data]);
+  const setPixel = (id: string) => setForm((f) => ({ ...f, adset: { ...f.adset, pixelId: id } }));
+
   const setAd = (p: Partial<FormState['ad']>) => setForm((f) => ({ ...f, ad: { ...f.ad, ...p } }));
   const mode: Mode = dest?.kind === 'NEW_CAMPAIGN' ? 'NEW' : dest?.kind === 'NEW_ADSET' ? 'EXISTING' : 'AD_ONLY';
   const finish = (r: LaunchResult) => { clearDraft(); onDone(r, mode); };
 
   const STEPS: { key: Step; title: string; sub: string }[] = [
     { key: 'AD', title: 'Ad', sub: type ? `${AD_TYPES.find((t) => t.key === type)?.title}${form.ad.name ? ` · ${form.ad.name}` : ''}` : 'Type, creative and text' },
-    { key: 'DEST', title: 'Destination', sub: dest ? destLabel(dest) : 'Campaign and ad set' },
-    { key: 'SETTINGS', title: 'Settings', sub: !dest ? 'Only for a new ad set or campaign' : needsSettings ? (dest.kind === 'NEW_CAMPAIGN' ? 'Campaign and ad set' : 'Ad set') : 'Not needed: existing ad set' },
+    { key: 'DEST', title: 'Ad set', sub: dest ? destLabel(dest) : 'Existing or new' },
+    { key: 'SETTINGS', title: 'Setup', sub: !dest ? 'Only for a new ad set or campaign' : needsSettings ? (dest.kind === 'NEW_CAMPAIGN' ? 'New campaign and ad set' : 'New ad set') : 'Not needed: existing ad set' },
     { key: 'REVIEW', title: 'Review', sub: 'Check and launch' },
   ];
   // "Still needed" chips take you to the field: match its label, scroll, focus and flash it.
   const jumpTo = (m: Missing) => {
     const want = m.label.replace(/\s*\(.*\)\s*/, '').toLowerCase();
-    const labels = Array.from(document.querySelectorAll<HTMLElement>('.ws-main .field > .label, .ws-main .ws-section'));
+    const labels = Array.from(document.querySelectorAll<HTMLElement>('.ws-main .field > .label, .ws-main .health .label, .ws-main .ws-section'));
     const hit = labels.find((l) => (l.textContent || '').trim().toLowerCase() === want)
       || labels.find((l) => (l.textContent || '').trim().toLowerCase().startsWith(want))
       || labels.find((l) => (l.textContent || '').toLowerCase().includes(want));
@@ -175,7 +191,9 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
 
   const doneOf = (s: Step) => (s === 'AD' ? !adMissing.length : s === 'DEST' ? !!dest : s === 'SETTINGS' ? needsSettings && !settingsMissing.length : false);
 
-  const nextLabel = next === 'DEST' ? 'Choose destination' : next === 'SETTINGS' ? 'Set up ad set' : 'Review';
+  const nextLabel = next === 'DEST' ? 'Choose ad set' : next === 'SETTINGS' ? 'Set up ad set' : 'Review';
+  // Continue never dead-ends: with something missing it takes you to the first missing field.
+  const proceed = () => { if (!next) return; if (blocking.length) { jumpTo(blocking[0]); return; } go(next); };
 
   return (
     <div className="ws">
@@ -199,7 +217,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
           })}
         </ol>
         {next ? (
-          <button type="button" className="btn-primary ws-next" disabled={blocking.length > 0} onClick={() => go(next)} title={blocking.length ? `Still needed: ${blocking.map((m) => m.label).join(', ')}` : undefined}>
+          <button type="button" className={`btn-primary ws-next ${blocking.length ? 'blocked' : ''}`} onClick={proceed} title={blocking.length ? `Still needed: ${blocking.map((m) => m.label).join(', ')}` : undefined}>
             {nextLabel} <ArrowRight size={14} />
           </button>
         ) : <span className="ws-next-spacer" />}
@@ -239,9 +257,11 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
                   productSetsError={productSets.error}
                   productSetId={form.adset.productSetId}
                   onProductSet={(id) => setForm((f) => ({ ...f, adset: { ...f.adset, productSetId: id } }))}
-                  pixelId=""
-                  onReady={() => undefined}
-                  showHealth={false}
+                  pixelId={form.adset.pixelId}
+                  onReady={setCatalogReady}
+                  pixels={pixels.data || []}
+                  pixelsLoading={pixels.loading}
+                  onPixel={setPixel}
                 />
                 <SectionTitle>Ad details</SectionTitle>
                 <AdSection form={form} setAd={setAd} productSetId={form.adset.productSetId} preview={false} />
@@ -250,12 +270,18 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
               <>
                 <SectionTitle>Ad details</SectionTitle>
                 <StandardAdSection key={type} form={form} setAd={setAd} accountId={account.id} allowSkip={false} preview={false} hideSetup />
+                <SectionTitle>Tracking</SectionTitle>
+                <div className="card">
+                  <Field label="Dataset (pixel)" hint={form.adset.pixelId ? 'Website events from this ad (purchases, add to cart) are tracked with this dataset.' : 'Recommended: without it, Ads Manager won\u2019t track website events for this ad.'}>
+                    <Select value={form.adset.pixelId} onChange={setPixel} placeholder="Select a dataset (pixel)..." options={(pixels.data || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
+                  </Field>
+                </div>
               </>
             ) : null}
           </>
         ) : step === 'DEST' ? (
           <>
-            <StepHead title="Where should it run?" sub={isCatalog ? 'Pick an ad set, or create one. Catalog ads fit catalog campaigns on the same catalog, and Sales campaigns without a catalog.' : 'Pick an ad set, or create one. This ad fits campaigns without a catalog.'} />
+            <StepHead title="Which ad set should run this ad?" sub={isCatalog ? 'Pick an existing ad set, or create a new one. Only ad sets this catalog ad can join are shown.' : 'Pick an existing ad set, or create a new one. Only ad sets this ad can join are shown.'} />
             <DestinationTree account={account} fit={fit} value={dest} onChange={chooseDest} />
             {dest?.kind === 'ADSET' ? (
               <>
@@ -289,7 +315,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
             <StructureMap account={account} form={form} dest={dest} />
             <div className="card" style={{ marginTop: 14 }}>
               {dest.kind === 'ADSET' ? (
-                <AdOnlyPanel account={account} form={form} target={dest.adset} onClose={() => go('DEST')} onDone={finish} backLabel="Back to destination" title={false} />
+                <AdOnlyPanel account={account} form={form} target={dest.adset} onClose={() => go('DEST')} onDone={finish} backLabel="Back to ad set" title={false} />
               ) : (
                 <ReviewPanel
                   mode={mode}
@@ -301,7 +327,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
                   pixels={pixels.data || []}
                   onClose={() => go('SETTINGS')}
                   onDone={finish}
-                  backLabel="Back to settings"
+                  backLabel="Back to setup"
                   title={false}
                 />
               )}
@@ -317,7 +343,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
               {blocking.length ? <>Still needed: {blocking.map((m) => <button type="button" key={m.key} className="need" onClick={() => jumpTo(m)} title="Go to this field">{m.label}</button>)}</> : <span className="ready">Ready to continue</span>}
             </span>
             {next ? (
-              <button type="button" className="btn-primary" disabled={blocking.length > 0} onClick={() => go(next)}>
+              <button type="button" className={`btn-primary ${blocking.length ? 'blocked' : ''}`} onClick={proceed}>
                 {nextLabel} <ArrowRight size={14} />
               </button>
             ) : null}
@@ -325,7 +351,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
         ) : null}
       </div>
 
-      {/* Live preview and destination summary */}
+      {/* Live preview and ad set summary */}
       <aside className="ws-side" aria-label="Preview">
         {type ? <AdPreview form={form} /> : <div className="preview"><div className="preview-empty">Pick an ad type to see a preview.</div></div>}
         {dest ? (
