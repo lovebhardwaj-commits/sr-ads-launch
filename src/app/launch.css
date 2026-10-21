@@ -212,3 +212,8 @@ details.adv[open] > summary { margin-bottom: 12px; }
 .set-thumbs img { width: 30px; height: 30px; object-fit: contain; background: #fff; border: 1px solid var(--card-line); border-radius: 6px; }
 .set-checks { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .ws-draft b { color: var(--ink); }
+
+/* Dumb-proofing: continue with something missing looks muted but still guides; deliberate Active launch */
+.btn-primary.blocked { opacity: .6; }
+.confirm-active { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; font-size: 12.5px; color: var(--ink); padding: 10px 12px; border-radius: 9px; background: var(--seg-on); border: 1px solid var(--seg-on-line); }
+.confirm-active input { margin-top: 2px; accent-color: var(--coral); }
