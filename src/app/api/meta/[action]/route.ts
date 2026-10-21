@@ -163,15 +163,35 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
     case 'posts': {
       // Recent posts to promote as an existing-post ad.
       const page = need(q.get('page'), 'page');
+      // Each post carries its playable media: images, videos (with poster) and every item of a carousel.
       if (q.get('source') === 'INSTAGRAM') {
         const ig = need(q.get('ig'), 'Instagram account');
-        const res = await graph.get<{ data: any[] }>(`${ig}/media`, token, { fields: 'id,caption,media_type,media_url,thumbnail_url,timestamp,permalink', limit: 24 });
-        return res.data.map((m) => ({ id: m.id, text: m.caption || '', image: m.thumbnail_url || m.media_url || '', type: m.media_type, time: m.timestamp, link: m.permalink }));
+        const res = await graph.get<{ data: any[] }>(`${ig}/media`, token, { fields: 'id,caption,media_type,media_product_type,media_url,thumbnail_url,timestamp,permalink,children{media_type,media_url,thumbnail_url}', limit: 24 });
+        const item = (m: any) => (m.media_type === 'VIDEO' ? { type: 'video', url: m.media_url || '', poster: m.thumbnail_url || '' } : { type: 'image', url: m.media_url || m.thumbnail_url || '' });
+        return res.data.map((m) => ({
+          id: m.id, text: m.caption || '', image: m.thumbnail_url || m.media_url || '', time: m.timestamp, link: m.permalink,
+          type: m.media_product_type === 'REELS' ? 'REELS' : m.media_type,
+          media: (m.media_type === 'CAROUSEL_ALBUM' ? (m.children?.data || []).map(item) : [item(m)]).filter((x: any) => x.url),
+        }));
       }
       // Page posts need the Page's own token, read server-side and never sent to the browser.
       const pg = await graph.get<{ access_token?: string }>(page, token, { fields: 'access_token' });
-      const res = await graph.get<{ data: any[] }>(`${page}/published_posts`, pg.access_token || token, { fields: 'id,message,full_picture,created_time,permalink_url', limit: 24 });
-      return res.data.map((p) => ({ id: p.id, text: p.message || '', image: p.full_picture || '', type: 'POST', time: p.created_time, link: p.permalink_url }));
+      const res = await graph.get<{ data: any[] }>(`${page}/published_posts`, pg.access_token || token, { fields: 'id,message,full_picture,created_time,permalink_url,attachments{media_type,media,subattachments{media_type,media}}', limit: 24 });
+      const fbItem = (a: any) => (/video/i.test(a?.media_type || '') && a?.media?.source
+        ? { type: 'video', url: a.media.source, poster: a.media?.image?.src || '' }
+        : { type: 'image', url: a?.media?.image?.src || '' });
+      return res.data.map((p) => {
+        const att = p.attachments?.data?.[0];
+        const subs = att?.subattachments?.data || [];
+        const media = (subs.length ? subs.map(fbItem) : att ? [fbItem(att)] : []).filter((x: any) => x.url);
+        return { id: p.id, text: p.message || '', image: p.full_picture || '', type: media.some((x: any) => x.type === 'video') ? 'VIDEO' : subs.length > 1 ? 'CAROUSEL_ALBUM' : 'POST', time: p.created_time, link: p.permalink_url, media: media.length ? media : p.full_picture ? [{ type: 'image', url: p.full_picture }] : [] };
+      });
+    }
+
+    case 'video-status': {
+      // Meta processes uploaded videos before they can be used in an ad.
+      const v = await graph.get<{ status?: { video_status?: string; processing_progress?: number } }>(need(q.get('video'), 'video'), token, { fields: 'status' });
+      return { status: v.status?.video_status || 'processing', progress: v.status?.processing_progress ?? null };
     }
 
     case 'me':
@@ -194,6 +214,19 @@ async function handlePost(action: string, body: any, token: string): Promise<any
       const first = Object.values(res.images || {})[0];
       if (!first) throw new GraphError({ message: 'Facebook did not return an image hash.' });
       return { hash: first.hash, url: first.url };
+    }
+    case 'upload-video': {
+      // Resumable upload to the ad account's video library: start, (chunks via upload-video-chunk), finish.
+      const actId = act(body.account);
+      if (body.phase === 'start') {
+        const size = Number(body.size);
+        if (!(size > 0) || size > 1_000_000_000) throw new GraphError({ message: 'Use a video under 1 GB.' });
+        return graph.post<{ upload_session_id: string; video_id: string; start_offset: string; end_offset: string }>(`${actId}/advideos`, token, { upload_phase: 'start', file_size: size });
+      }
+      if (body.phase === 'finish') {
+        return graph.post(`${actId}/advideos`, token, { upload_phase: 'finish', upload_session_id: need(body.session, 'upload session'), title: body.name || 'Video' });
+      }
+      throw new GraphError({ message: 'Unknown upload phase' });
     }
     case 'launch':
       return launch(body as LaunchRequest, token);
@@ -224,6 +257,15 @@ export async function POST(req: NextRequest, { params }: { params: { action: str
   if (!session) return NextResponse.json({ error: { message: 'Not logged in' }, log: [] }, { status: 401 });
   const log: GraphCall[] = [];
   try {
+    // Video chunks arrive as raw bytes (each under the 4.5 MB request limit) and go to Meta as multipart.
+    if (params.action === 'upload-video-chunk') {
+      const q = req.nextUrl.searchParams;
+      const chunk = new Blob([await req.arrayBuffer()]);
+      const data = await graphLog.run(log, () => graph.postFile<{ start_offset: string; end_offset: string }>(`${act(q.get('account'))}/advideos`, session.token, {
+        upload_phase: 'transfer', upload_session_id: need(q.get('session'), 'upload session'), start_offset: need(q.get('offset'), 'offset'),
+      }, { field: 'video_file_chunk', data: chunk, name: 'chunk' }));
+      return NextResponse.json({ data, log });
+    }
     const body = await req.json();
     const data = await graphLog.run(log, () => handlePost(params.action, body, session.token));
     return NextResponse.json({ data, log });

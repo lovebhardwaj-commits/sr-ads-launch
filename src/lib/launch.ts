@@ -167,7 +167,7 @@ export function creativeParams(form: FormState) {
   };
 }
 
-/** Normal (non-catalog) ad creative: uploaded image, or an existing Facebook / Instagram post. */
+/** Normal (non-catalog) ad creative: uploaded image or video, or an existing Facebook / Instagram post. */
 export function standardCreativeParams(form: FormState) {
   const ad = form.ad;
   const urlTags = buildUrlTags(ad.urlTags || {});
@@ -183,6 +183,20 @@ export function standardCreativeParams(form: FormState) {
       source_instagram_media_id: ad.postId,
       ...(urlTags ? { url_tags: urlTags } : {}),
     };
+  }
+  if (ad.videoId) {
+    // Video ad: Meta needs a thumbnail (taken from a frame of the video and uploaded as an image).
+    const video: any = {
+      video_id: ad.videoId,
+      image_hash: ad.imageHash,
+      message: ad.message,
+      call_to_action: { type: ad.cta, value: { link: ad.link.trim() } },
+    };
+    if (ad.headline.trim()) video.title = ad.headline;
+    if (ad.description.trim()) video.link_description = ad.description;
+    const story: any = { page_id: ad.pageId, video_data: video };
+    if (ad.instagramUserId) story.instagram_user_id = ad.instagramUserId;
+    return { name, object_story_spec: story, ...(urlTags ? { url_tags: urlTags } : {}) };
   }
   const link: any = {
     image_hash: ad.imageHash,
@@ -263,7 +277,7 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
     const adset = await graph.post<{ id: string }>(`${act}/adsets`, token, adsetParams(form, ctx, currency, campaignId, targeting));
     result.created.adset = { id: adset.id, name: form.adset.name.trim() };
 
-    // 3a. New ad: catalog template, or a normal ad from an uploaded image / existing post
+    // 3a. New ad: catalog template, or a normal ad from an uploaded image / video / existing post
     if (ctx.needsAd || ctx.needsStandardAd) {
       step = 'creative';
       const creative = await graph.post<{ id: string }>(`${act}/adcreatives`, token, ctx.needsAd ? creativeParams(form) : standardCreativeParams(form));
