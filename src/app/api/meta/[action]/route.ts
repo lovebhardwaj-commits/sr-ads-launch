@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { graph, graphLog, GraphError } from '@/lib/graph';
-import { launch } from '@/lib/launch';
+import { buildTargeting, launch } from '@/lib/launch';
 import { getSession } from '@/lib/session';
-import type { GraphCall, LaunchRequest } from '@/lib/types';
+import type { FlowContext, FormState, GraphCall, LaunchRequest } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -52,7 +52,25 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
       return graph.list(`${act(q.get('account'))}/adspixels`, token, { fields: 'id,name', limit: 100 });
 
     case 'saved-audiences':
-      return graph.list(`${act(q.get('account'))}/saved_audiences`, token, { fields: 'id,name', limit: 100 });
+      return graph.list(`${act(q.get('account'))}/saved_audiences`, token, { fields: 'id,name,targeting', limit: 100 });
+
+    case 'custom-audiences': {
+      // Custom audiences and lookalikes of the ad account. Counts and status are asked for first and dropped if Meta refuses them.
+      const actId = act(q.get('account'));
+      const ask = (fields: string) => graph.list<any>(`${actId}/customaudiences`, token, { fields, limit: 200 }, 5);
+      try { return await ask('id,name,subtype,approximate_count_lower_bound,approximate_count_upper_bound,operation_status'); }
+      catch { return await ask('id,name,subtype'); }
+    }
+
+    case 'interest-suggestions': {
+      // Interests Meta finds related to the ones already chosen.
+      let names: unknown = [];
+      try { names = JSON.parse(q.get('names') || '[]'); } catch { /* none */ }
+      const list = (Array.isArray(names) ? names : []).filter((n): n is string => typeof n === 'string' && !!n.trim()).slice(0, 8);
+      if (!list.length) return [];
+      const res = await graph.get<{ data: any[] }>('search', token, { type: 'adinterestsuggestion', interest_list: list, limit: 20 });
+      return res.data;
+    }
 
     case 'pages':
       return graph.list('me/accounts', token, { fields: 'id,name,website,link,instagram_business_account{id,username}', limit: 100 });
@@ -263,6 +281,23 @@ async function handlePost(action: string, body: any, token: string): Promise<any
         return graph.post(`${actId}/advideos`, token, { upload_phase: 'finish', upload_session_id: need(body.session, 'upload session'), title: body.name || 'Video' });
       }
       throw new GraphError({ message: 'Unknown upload phase' });
+    }
+    case 'audience-estimate': {
+      // Meta's estimate of how many people match the audience as it would be launched.
+      const form = body.form as FormState; const ctx = body.ctx as FlowContext;
+      if (ctx.isCatalog && form.adset.catalogAudience !== 'BROAD') return { available: false, reason: 'Retargeting audiences have no size estimate.' };
+      let saved: any;
+      if (form.adset.audienceType === 'SAVED' && form.adset.savedAudienceId) saved = (await graph.get<{ targeting: any }>(form.adset.savedAudienceId, token, { fields: 'targeting' })).targeting;
+      const spec = buildTargeting(form, ctx, body.sourceTargeting, saved);
+      if (!spec.geo_locations || !Object.keys(spec.geo_locations).length) return { available: false, reason: 'Add a location to see the estimate.' };
+      // The estimate takes a plain spec: Advantage+ settings are removed and its age range becomes a plain one.
+      delete spec.targeting_automation; delete spec.targeting_optimization; delete spec.targeting_relaxation_types;
+      if (spec.age_range) { spec.age_min = spec.age_range[0]; spec.age_max = spec.age_range[1]; delete spec.age_range; }
+      if (!spec.age_max) spec.age_max = 65;
+      const res = await graph.get<{ data: any[] }>(`${act(body.accountId)}/delivery_estimate`, token, { targeting_spec: spec, optimization_goal: 'REACH' });
+      const e = res.data?.[0];
+      if (!e) return { available: false, reason: 'Meta returned no estimate.' };
+      return { available: true, ready: e.estimate_ready !== false, daily: e.estimate_dau ?? null, lower: e.estimate_mau_lower_bound ?? e.estimate_mau ?? null, upper: e.estimate_mau_upper_bound ?? e.estimate_mau ?? null };
     }
     case 'launch':
       return launch(body as LaunchRequest, token);
