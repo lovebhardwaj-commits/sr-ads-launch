@@ -1,5 +1,6 @@
 import 'server-only';
 import { ATTRIBUTION, BID_STRATEGIES, buildUrlTags, catalogAudienceSpec, goalDef, toMinorUnits } from './constants';
+import { ALL_FB_POSITIONS, ALL_IG_POSITIONS } from './positions';
 import { buildContext } from './form';
 import { graph, GraphError } from './graph';
 import type { FlowContext, FormState, LaunchRequest, LaunchResult } from './types';
@@ -8,10 +9,24 @@ import type { FlowContext, FormState, LaunchRequest, LaunchResult } from './type
 
 const CONTROLLED_KEYS = [
   'geo_locations', 'age_min', 'age_max', 'genders', 'locales',
-  'publisher_platforms', 'facebook_positions', 'instagram_positions', 'audience_network_positions', 'messenger_positions', 'device_platforms',
+  'publisher_platforms', 'facebook_positions', 'instagram_positions', 'audience_network_positions', 'messenger_positions',
   'product_audience_specs', 'excluded_product_audience_specs',
 ];
-const AUDIENCE_KEYS = ['flexible_spec', 'targeting_automation', 'interests'];
+// Rebuilt from the form unless the audience is kept "as in the original ad set".
+const AUDIENCE_KEYS = ['flexible_spec', 'targeting_automation', 'interests', 'custom_audiences', 'excluded_custom_audiences', 'targeting_optimization'];
+// Kept from the original ad set only when its device targeting is kept as it is (specific devices, OS versions).
+const DEVICE_KEYS = ['device_platforms', 'user_os', 'user_device'];
+
+const uniqueById = <T extends { id: string | number }>(list: T[]): T[] => list.filter((x, i) => list.findIndex((y) => String(y.id) === String(x.id)) === i);
+
+/** Custom audiences, their exclusions and Advantage detailed targeting from the form. `merge` adds to a saved audience's own. */
+function addAudienceOptions(t: any, a: FormState['adset'], merge: boolean) {
+  const ids = (list: { id: string }[]) => list.map((x) => ({ id: x.id }));
+  if (a.customAudiences.length) t.custom_audiences = uniqueById([...(merge ? t.custom_audiences || [] : []), ...ids(a.customAudiences)]);
+  if (a.excludedAudiences.length) t.excluded_custom_audiences = uniqueById([...(merge ? t.excluded_custom_audiences || [] : []), ...ids(a.excludedAudiences)]);
+  // Meta already applies it for the Value and Landing page views goals, and may reject it there.
+  if (a.expandInterests && a.goal !== 'VALUE' && a.goal !== 'LANDING_PAGE_VIEWS') t.targeting_optimization = 'expansion_all';
+}
 
 function geo(form: FormState) {
   const g: any = {};
@@ -44,11 +59,19 @@ export function buildTargeting(form: FormState, ctx: FlowContext, base?: any, sa
   } else if (a.audienceType === 'SAVED' && saved) {
     t = { ...saved };
     if (!t.targeting_automation) t.targeting_automation = { advantage_audience: 0 };
+    // What was added next to the saved audience joins it: custom audiences, and interests into its first detailed targeting group.
+    addAudienceOptions(t, a, true);
+    if (a.interests.length) {
+      const groups = Array.isArray(t.flexible_spec) && t.flexible_spec.length ? t.flexible_spec.map((g: any) => ({ ...g })) : [{}];
+      groups[0].interests = uniqueById([...(groups[0].interests || []), ...a.interests.map((i) => ({ id: i.id, name: i.name }))]);
+      t.flexible_spec = groups;
+    }
   } else {
     t = {};
     if (base) {
       for (const [k, v] of Object.entries(base)) {
         if (CONTROLLED_KEYS.includes(k)) continue;
+        if (DEVICE_KEYS.includes(k) && a.devices !== 'SOURCE') continue;
         if (a.audienceType !== 'SOURCE' && AUDIENCE_KEYS.includes(k)) continue;
         t[k] = v;
       }
@@ -62,19 +85,34 @@ export function buildTargeting(form: FormState, ctx: FlowContext, base?: any, sa
       if (a.ageMax < 65) t.age_range = [a.ageMin, a.ageMax];
       if (a.gender !== 'ALL') t.genders = [a.gender === 'MALE' ? 1 : 2];
       if (a.interests.length) t.flexible_spec = [{ interests: a.interests.map((i) => ({ id: i.id, name: i.name })) }];
+      addAudienceOptions(t, a, false);
     } else {
       t.age_max = a.ageMax;
       if (a.gender !== 'ALL') t.genders = [a.gender === 'MALE' ? 1 : 2];
       if (a.audienceType === 'INTEREST') {
         if (a.interests.length) t.flexible_spec = [{ interests: a.interests.map((i) => ({ id: i.id, name: i.name })) }];
         t.targeting_automation = { advantage_audience: 0 };
+        addAudienceOptions(t, a, false);
       }
       if (a.audienceType === 'SOURCE' && !t.targeting_automation) t.targeting_automation = { advantage_audience: 0 };
     }
     if (a.locales.length) t.locales = a.locales.map((l) => l.key);
   }
 
-  if (a.placement === 'MANUAL') t.publisher_platforms = a.platforms;
+  if (a.placement === 'MANUAL') {
+    t.publisher_platforms = a.platforms;
+    // Every position ticked = Meta's default of all of them, so nothing is sent.
+    if (a.platforms.includes('facebook') && a.fbPositions.length && a.fbPositions.length < ALL_FB_POSITIONS.length) t.facebook_positions = a.fbPositions;
+    if (a.platforms.includes('instagram') && a.igPositions.length && a.igPositions.length < ALL_IG_POSITIONS.length) t.instagram_positions = a.igPositions;
+  }
+  if (a.devices === 'SOURCE') {
+    if (base) for (const k of DEVICE_KEYS) if (base[k] !== undefined) t[k] = base[k];
+  } else if (a.devices === 'MOBILE') {
+    t.device_platforms = ['mobile'];
+    if (a.os.length) t.user_os = a.os;
+  } else if (a.devices === 'DESKTOP') {
+    t.device_platforms = ['desktop'];
+  }
   return t;
 }
 
@@ -167,7 +205,7 @@ export function creativeParams(form: FormState) {
   };
 }
 
-/** Normal (non-catalog) ad creative: uploaded image or video, or an existing Facebook / Instagram post. */
+/** Normal (non-catalog) ad creative: uploaded image, or an existing Facebook / Instagram post. */
 export function standardCreativeParams(form: FormState) {
   const ad = form.ad;
   const urlTags = buildUrlTags(ad.urlTags || {});
@@ -277,7 +315,7 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
     const adset = await graph.post<{ id: string }>(`${act}/adsets`, token, adsetParams(form, ctx, currency, campaignId, targeting));
     result.created.adset = { id: adset.id, name: form.adset.name.trim() };
 
-    // 3a. New ad: catalog template, or a normal ad from an uploaded image / video / existing post
+    // 3a. New ad: catalog template, or a normal ad from an uploaded image / existing post
     if (ctx.needsAd || ctx.needsStandardAd) {
       step = 'creative';
       const creative = await graph.post<{ id: string }>(`${act}/adcreatives`, token, ctx.needsAd ? creativeParams(form) : standardCreativeParams(form));

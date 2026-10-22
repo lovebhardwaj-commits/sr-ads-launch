@@ -1,4 +1,5 @@
 import { attributionFromSpec, fromMinorUnits, goalFromOptimization, normalizeObjective } from './constants';
+import { ALL_FB_POSITIONS, ALL_IG_POSITIONS } from './positions';
 import type { AdsetLite, CampaignLite, FlowContext, FormState, GeoItem, Mode } from './types';
 
 /** Default text for catalog ads; Meta fills the {{product.*}} tokens per product. Normal ads start empty. */
@@ -36,8 +37,15 @@ export function defaultForm(catalog = false): FormState {
       ageMax: 65,
       gender: 'ALL',
       locales: [],
+      customAudiences: [],
+      excludedAudiences: [],
+      expandInterests: false,
       placement: 'ADVANTAGE',
       platforms: ['facebook', 'instagram'],
+      fbPositions: ALL_FB_POSITIONS,
+      igPositions: ALL_IG_POSITIONS,
+      devices: 'ALL',
+      os: [],
       attribution: '7C1V',
       startTime: '',
       productSetId: '',
@@ -97,7 +105,7 @@ export function clearAccountBound(f: FormState): FormState {
   return {
     ...f,
     campaign: { ...f.campaign, catalogId: '' },
-    adset: { ...f.adset, productSetId: '', crossSellSourceSetId: '', pixelId: '', savedAudienceId: '', audienceType: f.adset.audienceType === 'SAVED' ? 'ADVANTAGE' : f.adset.audienceType },
+    adset: { ...f.adset, productSetId: '', crossSellSourceSetId: '', pixelId: '', savedAudienceId: '', customAudiences: [], excludedAudiences: [], audienceType: f.adset.audienceType === 'SAVED' ? 'ADVANTAGE' : f.adset.audienceType },
     ad: { ...f.ad, imageHash: '', imageUrl: '', imageName: '', videoId: '', videoStatus: '', videoUrl: '' },
   };
 }
@@ -192,9 +200,27 @@ export function formFromAdset(src: AdsetLite, currency: string, catalogId?: stri
     a.audienceType = 'SOURCE';
   }
 
+  const aud = (x: { id: string | number; name?: string; subtype?: string }) => ({ id: String(x.id), name: x.name || String(x.id), subtype: x.subtype });
+  if (Array.isArray(t.custom_audiences)) a.customAudiences = t.custom_audiences.map(aud);
+  if (Array.isArray(t.excluded_custom_audiences)) a.excludedAudiences = t.excluded_custom_audiences.map(aud);
+  a.expandInterests = t.targeting_optimization === 'expansion_all';
+
   if (Array.isArray(t.publisher_platforms) && t.publisher_platforms.length) {
     a.placement = 'MANUAL';
     a.platforms = t.publisher_platforms;
+  }
+  // Positions the launcher can represent are carried over; ones it can't (in-stream video, notifications...) are not.
+  if (Array.isArray(t.facebook_positions) && t.facebook_positions.length) a.fbPositions = ALL_FB_POSITIONS.filter((k) => t.facebook_positions.includes(k));
+  if (Array.isArray(t.instagram_positions) && t.instagram_positions.length) a.igPositions = ALL_IG_POSITIONS.filter((k) => t.instagram_positions.includes(k));
+  // Devices: plain mobile / desktop / iOS / Android are editable; anything finer (device models, OS versions) is kept as it is.
+  const os: string[] = Array.isArray(t.user_os) ? t.user_os : [];
+  const dp: string[] = Array.isArray(t.device_platforms) ? t.device_platforms : [];
+  if (os.length || dp.length || t.user_device?.length) {
+    const plainOs = os.every((o) => o === 'iOS' || o === 'Android');
+    if (t.user_device?.length || !plainOs) a.devices = 'SOURCE';
+    else if (os.length) { a.devices = 'MOBILE'; a.os = os as ('iOS' | 'Android')[]; }
+    else if (dp.length === 1 && dp[0] === 'mobile') a.devices = 'MOBILE';
+    else if (dp.length === 1 && dp[0] === 'desktop') a.devices = 'DESKTOP';
   }
   a.attribution = attributionFromSpec(src.attribution_spec);
 
@@ -243,7 +269,7 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
     m.push({ key: 'budget.level', label: 'Campaign budget (Advantage+ Shopping needs one)' });
   }
   if (ctx.showBudget) {
-    if (!(parseFloat(form.budget.amount) > 0)) m.push({ key: 'budget.amount', label: ctx.needsCampaign ? 'Budget (campaign or ad set)' : 'Ad set budget' });
+    if (!(parseFloat(form.budget.amount) > 0)) m.push({ key: 'budget.amount', label: ctx.needsCampaign && form.budget.level === 'CAMPAIGN' ? 'Campaign budget' : 'Ad set budget' });
     if (form.budget.type === 'LIFETIME' && !form.budget.endDate) m.push({ key: 'budget.endDate', label: 'End date (lifetime budgets need one)' });
   }
   // Schedule
@@ -267,10 +293,27 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
   if (!(usesAudience && a.audienceType === 'SAVED') && !a.locations.length) m.push({ key: 'adset.locations', label: 'Location' });
   if (a.ageMin > a.ageMax) m.push({ key: 'adset.age', label: 'Min age below max age' });
   if (a.placement === 'MANUAL' && !a.platforms.length) m.push({ key: 'adset.platforms', label: 'At least one placement' });
+  if (a.placement === 'MANUAL') m.push(...validatePositions(a));
   const ad = form.ad;
   if (ctx.needsAd) m.push(...validateAd(form, true, ctx.adLevelCatalog));
   if (ctx.needsStandardAd) m.push(...validateAd(form, false));
   if (ctx.isDup && !ad.copyOriginal && !ad.addNew) m.push({ key: 'ad.none', label: 'Copy the original ads or add a new ad' });
+  return m;
+}
+
+/** Manual placements: every ticked platform needs a position, and Meta's own rules about Stories. */
+export function validatePositions(a: FormState['adset']): Missing[] {
+  const m: Missing[] = [];
+  const fb = a.platforms.includes('facebook');
+  const ig = a.platforms.includes('instagram');
+  if (fb && !a.fbPositions.length) m.push({ key: 'adset.fbPositions', label: 'Facebook placements (pick at least one)' });
+  if (ig && !a.igPositions.length) m.push({ key: 'adset.igPositions', label: 'Instagram placements (pick at least one)' });
+  // Only an explicit pick matters: all ticked sends nothing and Meta chooses.
+  const fbPicked = fb && a.fbPositions.length < ALL_FB_POSITIONS.length;
+  const igPicked = ig && a.igPositions.length < ALL_IG_POSITIONS.length;
+  const fbStory = fbPicked && a.fbPositions.includes('story');
+  if (fbStory && !(a.fbPositions.includes('feed') || (ig && a.igPositions.includes('story')))) m.push({ key: 'adset.fbPositions', label: 'Facebook placements (Stories needs Facebook Feed or Instagram Stories)' });
+  if (a.devices === 'DESKTOP' && (fbStory || (igPicked && a.igPositions.includes('story')))) m.push({ key: 'adset.devices', label: 'Devices (Stories are mobile only)' });
   return m;
 }
 
