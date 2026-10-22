@@ -1,6 +1,6 @@
 'use client';
 import { ImagePlus, Play } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPostBytes, errorText } from '@/lib/client-api';
 import { CTAS } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
@@ -94,22 +94,45 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
   }, [ad.pageId, page?.website]);
 
   // Meta processes an uploaded video before it can be used; check until it's ready.
+  // A request that never answers can't stall the checks, coming back to the tab checks at once
+  // (background tabs run timers slowly), and "Check now" does it on demand.
+  const [procPct, setProcPct] = useState<number | null>(null);
+  const checkNow = useRef<() => void>(() => undefined);
   useEffect(() => {
     if (!ad.videoId || ad.videoStatus !== 'processing') return;
     let stop = false;
+    let busy = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const startedAt = Date.now();
-    const tick = async () => {
-      if (stop) return;
+    const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> => new Promise((res, rej) => {
+      const t = setTimeout(() => rej(new Error('slow')), ms);
+      p.then((v) => { clearTimeout(t); res(v); }, (e) => { clearTimeout(t); rej(e); });
+    });
+    const check = async () => {
+      if (stop || busy) return;
+      busy = true;
+      clearTimeout(timer);
       try {
-        const s = await apiGet<{ status: string }>('video-status', { video: ad.videoId });
+        const s = await withTimeout(apiGet<{ status: string; progress: number | null }>('video-status', { video: ad.videoId }), 15000);
         if (stop) return;
+        if (typeof s.progress === 'number') setProcPct(Math.max(0, Math.min(100, Math.round(s.progress))));
         if (s.status === 'ready') { setAd({ videoStatus: 'ready' }); return; }
         if (s.status === 'error') { setAd({ videoStatus: 'error' }); return; }
-      } catch { /* try again */ }
-      if (Date.now() - startedAt < 10 * 60_000) setTimeout(tick, 4000);
+      } catch { /* try again */ } finally { busy = false; }
+      if (!stop && Date.now() - startedAt < 15 * 60_000) timer = setTimeout(check, Date.now() - startedAt < 20_000 ? 2000 : 4000);
     };
-    const t = setTimeout(tick, 3000);
-    return () => { stop = true; clearTimeout(t); };
+    checkNow.current = check;
+    timer = setTimeout(check, 2000);
+    const wake = () => { if (document.visibilityState === 'visible') check(); };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+    window.addEventListener('online', wake);
+    return () => {
+      stop = true; clearTimeout(timer);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('focus', wake);
+      window.removeEventListener('online', wake);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ad.videoId, ad.videoStatus]);
 
@@ -117,6 +140,7 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
     if (file.size > MAX_VIDEO) { setUploadError('Video must be under 1 GB.'); return; }
     const local = URL.createObjectURL(file);
     setProgress(0);
+    setProcPct(null);
     setAd({ videoStatus: 'uploading', videoUrl: local, videoId: '', imageHash: '', imageUrl: '', imageName: file.name });
     try {
       const thumb = await frameOf(local);
@@ -221,7 +245,12 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
                   </span>
                 </label>
                 {ad.videoStatus === 'uploading' ? <div className="progress" aria-label="Upload progress"><i style={{ width: `${Math.round(progress * 100)}%` }} /></div> : null}
-                {ad.videoStatus === 'processing' ? <div className="hint">Meta is processing the video. This usually takes under a minute; you can keep editing.</div> : null}
+                {ad.videoStatus === 'processing' ? (
+                  <div className="hint">
+                    Meta is processing the video{procPct != null && procPct > 0 ? `: ${procPct}%` : ''}. This usually takes under a minute; you can keep editing.{' '}
+                    <button type="button" className="btn-link" onClick={() => checkNow.current()}>Check now</button>
+                  </div>
+                ) : null}
                 {ad.videoStatus === 'ready' ? <div className="hint" style={{ color: 'var(--ok)' }}>Video ready on Meta.</div> : null}
                 {ad.videoStatus === 'error' ? <div className="notice bad" style={{ marginTop: 8 }}>Meta couldn&apos;t process this video. Upload a different file.</div> : null}
                 {uploadError ? <div className="notice bad" style={{ marginTop: 8 }}>{uploadError}</div> : null}
