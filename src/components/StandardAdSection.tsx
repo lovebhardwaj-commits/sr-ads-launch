@@ -3,8 +3,10 @@ import { ImagePlus, Play } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPostBytes, errorText } from '@/lib/client-api';
 import { CTAS } from '@/lib/constants';
+import { useAiStatus } from '@/lib/ai-client';
 import { useAsync } from '@/lib/hooks';
 import type { FormState, PostMedia } from '@/lib/types';
+import { startProxy } from '@/lib/video-proxy';
 import AiCopy from './AiCopy';
 import { MediaModal } from './PostMedia';
 import { NormalPreview } from './AdPreview';
@@ -57,6 +59,7 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
 }) {
   const ad = form.ad;
   const pages = useAsync<Page[]>('pages', () => apiGet('pages'));
+  const ai = useAiStatus();
   const page = pages.data?.find((p) => p.id === ad.pageId);
   const ig = page?.instagram_business_account;
   const [linkEdited, setLinkEdited] = useState(false);
@@ -142,6 +145,8 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
     setProgress(0);
     setProcPct(null);
     setAd({ videoStatus: 'uploading', videoUrl: local, videoId: '', imageHash: '', imageUrl: '', imageName: file.name });
+    // While the video uploads, the browser makes a small copy of it for the AI (only when AI writing is set up).
+    if (ai?.enabled && ai.videoCopy) startProxy(local, local);
     try {
       const thumb = await frameOf(local);
       const img = await apiPost<{ hash: string; url: string }>('upload-image', { account: accountId, name: `${file.name}-thumbnail.jpg`, bytes: thumb.split(',')[1] });

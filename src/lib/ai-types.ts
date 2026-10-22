@@ -6,7 +6,10 @@ export interface CopyRequest {
   kind: 'IMAGE' | 'VIDEO';
   /** The image, or the video's cover image (kept as a fallback when the video can't be opened) */
   imageHash: string;
+  /** Empty while the video is still uploading */
   videoId: string;
+  /** A small low-resolution copy of the whole video made in the browser (MP4 as base64), if it could be made */
+  proxy?: string;
   pageName: string;
   link: string;
   /** The call-to-action button's label, e.g. "Shop now" */
@@ -19,7 +22,6 @@ export interface CopyRequest {
 }
 
 export interface CopyOption {
-  angle: string;
   primary_text: string;
   headline: string;
   description: string;
@@ -28,13 +30,15 @@ export interface CopyOption {
 }
 
 export interface CopyResult {
-  options: CopyOption[];
+  copy: CopyOption;
   /** What the AI actually looked at */
   saw: 'VIDEO' | 'IMAGE' | 'COVER';
+  /** Video only: the browser's low-resolution copy (silent), or the link to the video on Meta */
+  via?: 'copy' | 'link';
   note?: string;
   model: string;
 }
 
-export interface AiStatus { enabled: boolean; model: string; maxVideoSeconds: number }
+export interface AiStatus { enabled: boolean; model: string; maxVideoSeconds: number; /** The browser should make a low-resolution copy of videos */ videoCopy: boolean }
 
-export const COPY_LIMITS = { primary: 300, headline: 40, description: 30 };
+export const COPY_LIMITS = { primary: 600, headline: 40, description: 250 };
