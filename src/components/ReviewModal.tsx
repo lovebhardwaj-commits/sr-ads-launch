@@ -2,10 +2,11 @@
 import { useEffect, useState } from 'react';
 import { apiPost, errorText } from '@/lib/client-api';
 import {
-  ATTRIBUTION, BID_STRATEGIES, CATALOG_EVENTS, CONVERSION_EVENTS, CTAS, PLATFORMS, RETARGET_PRESETS, buildUrlTags, catalogAudienceSpec, currencySymbol, goalsFor, objectiveLabel,
+  ATTRIBUTION, BID_STRATEGIES, CATALOG_EVENTS, CONVERSION_EVENTS, CTAS, RETARGET_PRESETS, buildUrlTags, catalogAudienceSpec, currencySymbol, goalsFor, objectiveLabel,
 } from '@/lib/constants';
 import type { AdAccount, AdsetLite, CampaignLite, FlowContext, FormState, LaunchResult, Mode } from '@/lib/types';
 import type { ProductSet } from './LaunchForm';
+import { placementSummary } from './PlacementControls';
 import ProductStrip from './ProductStrip';
 import ReviewGroups, { type ReviewRow } from './ReviewGroups';
 import { Segmented } from './ui';
@@ -97,14 +98,21 @@ export function ReviewPanel({ mode, account, form, ctx, campaign, source, produc
     adsetRows.push(['Dataset (pixel)', px ? `${px.name} (${px.id})` : a.pixelId]);
   }
   if (usesAudience) {
-    adsetRows.push(['Audience', a.audienceType === 'ADVANTAGE' ? 'Advantage+ Audience' : a.audienceType === 'INTEREST' ? `Interests: ${a.interests.map((i) => i.name).join(', ')}` : a.audienceType === 'SAVED' ? 'Saved audience' : 'Same as original ad set']);
+    const names = (list: { name: string }[]) => list.map((x) => x.name).join(', ');
+    adsetRows.push(['Audience', a.audienceType === 'ADVANTAGE' ? 'Advantage+ Audience' : a.audienceType === 'INTEREST' ? `Interests: ${names(a.interests) || 'none, broad'}` : a.audienceType === 'SAVED' ? `Saved audience${a.interests.length ? `, plus interests: ${names(a.interests)}` : ''}` : 'Same as original ad set']);
+    // Kept as in the original ad set, these come with it; otherwise they are what was chosen here.
+    if (a.audienceType !== 'SOURCE') {
+      if (a.customAudiences.length) adsetRows.push([a.audienceType === 'ADVANTAGE' ? 'Custom audience suggestions' : 'Custom audiences', names(a.customAudiences)]);
+      if (a.excludedAudiences.length) adsetRows.push(['Excluded audiences', names(a.excludedAudiences)]);
+      if (a.expandInterests && a.audienceType !== 'ADVANTAGE' && goal?.key !== 'VALUE' && goal?.key !== 'LANDING_PAGE_VIEWS') adsetRows.push(['Advantage detailed targeting', 'On: Meta may go beyond the chosen interests']);
+    }
   }
   if (!(usesAudience && a.audienceType === 'SAVED')) {
     adsetRows.push(['Locations', a.locations.map((l) => l.name).join(', ')]);
     adsetRows.push(['Age and gender', `${a.ageMin}–${a.ageMax === 65 ? '65+' : a.ageMax}, ${a.gender === 'ALL' ? 'all genders' : a.gender.toLowerCase()}`]);
     if (a.locales.length) adsetRows.push(['Languages', a.locales.map((l) => l.name).join(', ')]);
   }
-  adsetRows.push(['Placements', a.placement === 'ADVANTAGE' ? 'Advantage+ Placements' : a.platforms.map((p) => PLATFORMS.find((x) => x.key === p)?.label).join(', ')]);
+  adsetRows.push(['Placements', placementSummary(a)]);
   if (goal?.attribution) adsetRows.push(['Attribution', ATTRIBUTION.find((x) => x.key === a.attribution)?.label || '']);
 
   if (ctx.needsAd) {

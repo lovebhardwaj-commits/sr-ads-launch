@@ -9,9 +9,11 @@ import {
 import { buildContext, validate } from '@/lib/form';
 import { useAsync } from '@/lib/hooks';
 import type { AdAccount, AdsetLite, CampaignLite, FormState, GeoItem, InterestItem, LaunchResult, LocaleItem, Mode } from '@/lib/types';
+import { AudienceEstimate, CustomAudiences, InterestSuggestions, describeTargeting } from './AudienceControls';
 import AdSection from './AdSection';
 import BudgetField from './BudgetField';
 import CatalogPanel from './CatalogPanel';
+import { Devices, Positions, placementSummary } from './PlacementControls';
 import ReviewModal from './ReviewModal';
 import StandardAdSection from './StandardAdSection';
 import { CheckPills, Field, Loading, Segmented, Select, TagSearch, TextInput, Toggle } from './ui';
@@ -57,7 +59,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
   // Account-level lists
   const pixels = useAsync<{ id: string; name: string }[]>(`pixels-${account.id}`, () => apiGet('pixels', { account: account.id }));
   const retarget = ctx.isCatalog && a.catalogAudience !== 'BROAD';
-  const saved = useAsync<{ id: string; name: string }[]>(
+  const saved = useAsync<{ id: string; name: string; targeting?: unknown }[]>(
     !retarget && (a.audienceType === 'SAVED' || a.audienceType === 'INTEREST') ? `saved-${account.id}` : null,
     () => apiGet('saved-audiences', { account: account.id }),
   );
@@ -89,7 +91,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
 
   const advantagePlus = ctx.needsCampaign && c.setup === 'ADVANTAGE_PLUS';
   useEffect(() => {
-    if (advantagePlus) up('adset', { audienceType: 'ADVANTAGE', placement: 'ADVANTAGE' });
+    if (advantagePlus) { up('adset', { audienceType: 'ADVANTAGE', placement: 'ADVANTAGE' }); up('budget', { level: 'CAMPAIGN' }); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [advantagePlus]);
 
@@ -103,12 +105,12 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
   useEffect(() => { onMissing?.(missing); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [missingKey]);
 
   // Budget can live at either level; an amount at one level disables the other.
-  const campaignBudgetReason = b.level === 'ADSET' && b.amount ? 'Using an ad set budget. Clear it to use a campaign budget instead.' : undefined;
+  const campaignBudgetReason = b.level === 'ADSET' ? 'The budget is set at ad set level. Switch the budget level above to use one budget for the whole campaign.' : undefined;
   const adsetBudgetReason = !ctx.needsCampaign
     ? (ctx.campaignHasBudget ? 'This campaign has a campaign budget (Advantage+ campaign budget), so its ad sets share it.' : undefined)
     : advantagePlus
       ? 'Advantage+ Shopping uses the campaign budget.'
-      : b.level === 'CAMPAIGN' && b.amount ? 'Using a campaign budget. Clear it to set an ad set budget instead.' : undefined;
+      : b.level === 'CAMPAIGN' ? 'The budget is set at campaign level. Switch the budget level in the Campaign card to give the ad set its own.' : undefined;
   const setBudget = (patch: Partial<FormState['budget']>) => up('budget', patch);
 
   const upsellOrCross = retarget && (a.retargetPreset === 'UPSELL' || a.retargetPreset === 'CROSS_SELL');
@@ -153,6 +155,24 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
       describe={(r) => (r.audience_size_upper_bound ? `${Number(r.audience_size_upper_bound).toLocaleString('en-IN')} people` : '')}
     />
   );
+
+  const addInterest = (i: InterestItem) => up('adset', { interests: [...a.interests, i] });
+  const customAudienceFields = (hint: string) => (
+    <CustomAudiences accountId={account.id} include={a.customAudiences} exclude={a.excludedAudiences} includeHint={hint}
+      onInclude={(v) => up('adset', { customAudiences: v })} onExclude={(v) => up('adset', { excludedAudiences: v })} />
+  );
+  const estimate = !retarget ? <AudienceEstimate accountId={account.id} form={form} ctx={ctx} sourceTargeting={source?.targeting} /> : null;
+  // Advantage detailed targeting: Original audience only. For some goals Meta applies it by itself.
+  const expansion = a.interests.length || a.audienceType === 'SAVED' ? (
+    goal.key === 'VALUE' || goal.key === 'LANDING_PAGE_VIEWS'
+      ? <p className="hint">For this performance goal Meta already widens detailed targeting when it expects better results.</p>
+      : (
+        <Field hint="Lets Meta show your ad to people outside the interests above when that is likely to improve results. If Meta doesn't allow it for your goal, turn it off.">
+          <Toggle checked={a.expandInterests} onChange={(v) => up('adset', { expandInterests: v })} label={<span className="strong">Advantage detailed targeting</span>} />
+        </Field>
+      )
+  ) : null;
+  const savedSummary = describeTargeting(saved.data?.find((s) => s.id === a.savedAudienceId)?.targeting);
 
   return (
     <>
@@ -212,10 +232,15 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
               </Field>
             ) : null}
             </Adv>
+            {!advantagePlus ? (
+              <Field label="Budget level" hint={b.level === 'CAMPAIGN' ? 'One budget for the whole campaign; Meta spreads it across the campaign’s ad sets.' : 'Each ad set gets its own budget, set in the Ad Set card below.'}>
+                <Segmented value={b.level} onChange={(v) => setBudget({ level: v })} options={[{ key: 'CAMPAIGN', label: 'Campaign budget' }, { key: 'ADSET', label: 'Ad set budget' }]} />
+              </Field>
+            ) : null}
             <BudgetField
               level="CAMPAIGN"
-              label="Campaign budget (Advantage+ campaign budget)"
-              hint="Meta spreads one budget across the ad sets. Leave empty to set the budget on the ad set instead."
+              label="Campaign budget"
+              hint="Advantage+ campaign budget: Meta spreads it across the ad sets."
               budget={b}
               onChange={setBudget}
               symbol={sym}
@@ -274,7 +299,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             </Field>
           ) : goal.pixel ? (
             <Field label="Dataset (pixel)">
-              {pixels.loading ? <Loading text="Loading datasets…" /> : pixels.error ? <div className="notice bad">{pixels.error}</div> : (
+              {pixels.loading ? <Loading /> : pixels.error ? <div className="notice bad">{pixels.error}</div> : (
                 <Select value={a.pixelId} onChange={(v) => up('adset', { pixelId: v })} placeholder="Select a dataset (pixel)..." options={(pixels.data || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
               )}
             </Field>
@@ -290,16 +315,15 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             </Field>
           ) : null;
           if (!embedded) return <>{location}{goalField}{dataset}{event}{attribution}</>;
-          const summary = [goal.label, goal.pixel ? CONVERSION_EVENTS.find((e) => e.key === (goal.fixedEvent || a.event))?.label : '', goal.attribution ? ATTRIBUTION.find((x) => x.key === a.attribution)?.label : ''].filter(Boolean).join(' · ');
-          return <>{dataset}<Adv on summary={summary}>{location}{goalField}{event}{attribution}</Adv></>;
+          const summary = [goal.pixel ? CONVERSION_EVENTS.find((e) => e.key === (goal.fixedEvent || a.event))?.label : '', goal.attribution ? ATTRIBUTION.find((x) => x.key === a.attribution)?.label : ''].filter(Boolean).join(' · ') || 'Website';
+          return <>{dataset}{goalField}<Adv on summary={summary}>{location}{event}{attribution}</Adv></>;
         })()}
 
         {/* Budget & schedule */}
         <div className="subhead">Budget &amp; schedule</div>
         <BudgetField
           level="ADSET"
-          label="Budget"
-          hint={ctx.needsCampaign ? 'Leave empty to use a campaign budget instead.' : undefined}
+          label="Ad set budget"
           budget={b}
           onChange={setBudget}
           symbol={sym}
@@ -387,7 +411,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
 
         {!retarget && (a.audienceType === 'INTEREST' || a.audienceType === 'SAVED') ? (
           <Field label="Use saved audience">
-            {saved.loading ? <Loading text="Loading saved audiences…" /> : saved.error ? <div className="notice bad">{saved.error}</div> : (
+            {saved.loading ? <Loading /> : saved.error ? <div className="notice bad">{saved.error}</div> : (
               <Select
                 value={a.savedAudienceId}
                 onChange={(v) => up('adset', { savedAudienceId: v, audienceType: v ? 'SAVED' : 'INTEREST' })}
@@ -396,7 +420,17 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             )}
           </Field>
         ) : null}
-        {!retarget && a.audienceType === 'SAVED' ? <p className="hint">The saved audience&apos;s own location, age, gender and detailed targeting are used.</p> : null}
+        {!retarget && a.audienceType === 'SAVED' ? (
+          <>
+            {savedSummary ? <p className="hint" style={{ marginTop: 0 }}>This saved audience: {savedSummary}</p> : null}
+            <p className="hint">Its own location, age, gender and detailed targeting are used. What you add below is added on top of it.</p>
+            <Field label="Detailed targeting" hint="Added to the saved audience's own detailed targeting.">{interestField}</Field>
+            <InterestSuggestions interests={a.interests} onAdd={addInterest} />
+            {customAudienceFields('Added to the saved audience’s own custom audiences.')}
+            {expansion}
+            {estimate}
+          </>
+        ) : null}
 
         {!retarget && a.audienceType === 'ADVANTAGE' ? (
           <>
@@ -418,11 +452,15 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             </div>
             <Field label="Gender">{genderField}</Field>
             <Field label="Detailed targeting">{interestField}</Field>
+            <InterestSuggestions interests={a.interests} onAdd={addInterest} />
+            {customAudienceFields('Suggestions: Meta starts with these, then looks beyond them.')}
+            {estimate}
           </>
         ) : null}
 
         {retarget || a.audienceType === 'INTEREST' || a.audienceType === 'SOURCE' ? (
           <>
+            {!retarget && a.audienceType === 'INTEREST' ? customAudienceFields('Customer lists, website visitors and lookalikes to reach.') : null}
             <Field label="Locations">{locationField}</Field>
             <div className="row field">
               <Field label="Age">
@@ -434,7 +472,10 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             </div>
             <Field label="Gender">{genderField}</Field>
             {!retarget && a.audienceType === 'INTEREST' ? <Field label="Detailed targeting" hint="Include people who match any of these. Leave empty for broad.">{interestField}</Field> : null}
+            {!retarget && a.audienceType === 'INTEREST' ? <InterestSuggestions interests={a.interests} onAdd={addInterest} /> : null}
+            {!retarget && a.audienceType === 'INTEREST' ? expansion : null}
             {!embedded ? <Field label="Languages">{languageField}</Field> : null}
+            {!retarget && (a.audienceType === 'INTEREST' || a.audienceType === 'SOURCE') ? estimate : null}
           </>
         ) : null}
 
@@ -453,14 +494,18 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
                 />
               </Field>
               {a.placement === 'MANUAL' ? (
-                <div className="field" style={{ marginTop: 10 }}>
-                  <CheckPills value={a.platforms} onChange={(v) => up('adset', { platforms: v })} options={PLATFORMS} />
-                </div>
+                <>
+                  <div className="field" style={{ marginTop: 10 }}>
+                    <CheckPills value={a.platforms} onChange={(v) => up('adset', { platforms: v })} options={PLATFORMS} />
+                  </div>
+                  <Positions a={a} set={(p) => up('adset', p)} />
+                </>
               ) : null}
+              {a.placement === 'MANUAL' || a.devices !== 'ALL' ? <Devices a={a} set={(p) => up('adset', p)} /> : null}
             </>
           );
           if (!embedded) return <><div className="subhead">Placements</div>{placements}</>;
-          const summary = `${a.placement === 'ADVANTAGE' ? 'Advantage+ placements' : `${a.platforms.length} manual placements`} · ${a.locales.length ? a.locales.map((l) => l.name).join(', ') : 'All languages'}`;
+          const summary = `${placementSummary(a)} · ${a.locales.length ? a.locales.map((l) => l.name).join(', ') : 'All languages'}`;
           return <Adv on summary={summary}>{placements}<Field label="Languages">{languageField}</Field></Adv>;
         })()}
       </div>
@@ -502,8 +547,8 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
           {!ctx.needsCampaign && !ctx.isDup ? (
             <p className="note">
               {ctx.isCatalog
-                ? 'This campaign uses a catalog, so you\u2019ll create a catalog ad: Meta picks products from the product set for each shopper.'
-                : 'This is a normal campaign, so you\u2019ll create a normal ad: upload an image or use an existing post.'}
+                ? 'This campaign uses a catalog, so you’ll create a catalog ad: Meta picks products from the product set for each shopper.'
+                : 'This is a normal campaign, so you’ll create a normal ad: upload an image or use an existing post.'}
             </p>
           ) : null}
           {ctx.isCatalog ? (
