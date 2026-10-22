@@ -30,7 +30,7 @@ const AD_TYPES: { key: AdType; title: string; text: string; icon: ReactNode }[] 
 
 /**
  * "Start with an Ad" workspace: a sticky step bar on top (back icon, steps, continue), one step at a time in
- * the editor, the live preview and ad set summary on the right, and an action bar that says what's blocking.
+ * the editor, the live preview and "Runs in" summary on the right, and an action bar that says what's blocking.
  * Nothing is stored in the browser. `catalogOnly` (Catalog Ads > Create ad) offers catalog ads only.
  */
 export default function AdFirstWorkspace({ account, form, setForm, onDone, onExit, repeatOf, catalogOnly = false, exitLabel = 'All launch options' }: {
@@ -54,6 +54,30 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
   const [settingsMissing, setSettingsMissing] = useState<Missing[]>([{ key: 'settings', label: 'Ad set settings' }]);
   const [catalogReady, setCatalogReady] = useState(false);
   const mainRef = useRef<HTMLDivElement>(null);
+  const sideRef = useRef<HTMLElement>(null);
+  const sideInner = useRef<HTMLDivElement>(null);
+
+  // The preview column is sticky: keep it no taller than the room left in the window and scroll inside it,
+  // with a fade at the bottom while there is more to see.
+  useEffect(() => {
+    const el = sideRef.current; const inner = sideInner.current;
+    if (!el || !inner) return;
+    let raf = 0;
+    const fit = () => {
+      raf = 0;
+      if (getComputedStyle(el).position !== 'sticky') { el.style.maxHeight = ''; el.dataset.more = '0'; return; }
+      const room = window.innerHeight - el.getBoundingClientRect().top - 16;
+      el.style.maxHeight = `${Math.max(240, Math.floor(room))}px`;
+      el.dataset.more = el.scrollHeight - el.scrollTop - el.clientHeight > 6 ? '1' : '0';
+    };
+    const queue = () => { if (!raf) raf = requestAnimationFrame(fit); };
+    fit();
+    const ro = new ResizeObserver(queue); ro.observe(inner);
+    window.addEventListener('scroll', queue, { passive: true });
+    window.addEventListener('resize', queue);
+    el.addEventListener('scroll', queue, { passive: true });
+    return () => { if (raf) cancelAnimationFrame(raf); ro.disconnect(); window.removeEventListener('scroll', queue); window.removeEventListener('resize', queue); el.removeEventListener('scroll', queue); };
+  }, []);
 
   const startFresh = () => {
     const f = defaultForm(catalogOnly);
@@ -134,14 +158,16 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
   }, [pixels.data]);
   const setPixel = (id: string) => setForm((f) => ({ ...f, adset: { ...f.adset, pixelId: id } }));
 
+  const setCount = productSets.data?.find((x) => x.id === form.adset.productSetId)?.product_count;
   const setAd = (p: Partial<FormState['ad']>) => setForm((f) => ({ ...f, ad: { ...f.ad, ...p } }));
   const mode: Mode = dest?.kind === 'NEW_CAMPAIGN' ? 'NEW' : dest?.kind === 'NEW_ADSET' ? 'EXISTING' : 'AD_ONLY';
   const finish = (r: LaunchResult) => onDone(r, mode);
 
+  // The step bar names the steps only; the names of the ad, campaign and ad set live in the "Runs in" card.
   const STEPS: { key: Step; title: string; sub: string }[] = [
-    { key: 'AD', title: 'Ad', sub: type ? `${AD_TYPES.find((t) => t.key === type)?.title}${form.ad.name ? ` · ${form.ad.name}` : ''}` : 'Type, creative and text' },
-    { key: 'DEST', title: 'Campaign & ad set', sub: dest ? destLabel(dest) : 'Existing or new' },
-    { key: 'SETTINGS', title: 'Setup', sub: !dest ? 'Only for a new ad set or campaign' : needsSettings ? (dest.kind === 'NEW_CAMPAIGN' ? 'New campaign and ad set' : 'New ad set') : 'Not needed: existing ad set' },
+    { key: 'AD', title: 'Ad', sub: catalogOnly ? 'Product set and text' : 'Type, creative and text' },
+    { key: 'DEST', title: 'Campaign & ad set', sub: 'Existing or new' },
+    { key: 'SETTINGS', title: 'Setup', sub: 'Only for a new ad set or campaign' },
     { key: 'REVIEW', title: 'Review', sub: 'Check and launch' },
   ];
   // "Still needed" chips take you to the field: match its label, scroll, focus and flash it.
@@ -288,10 +314,11 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
         ) : step === 'REVIEW' && dest ? (
           <>
             <StepHead title="Review and launch" sub="This is what will be created in Meta. Everything starts paused unless you choose otherwise." />
+            <div className="review-account">In ad account <b>{account.name}</b></div>
             <StructureMap account={account} form={form} dest={dest} />
             <div className="card" style={{ marginTop: 14 }}>
               {dest.kind === 'ADSET' ? (
-                <AdOnlyPanel account={account} form={form} target={dest.adset} onClose={() => go('DEST')} onDone={finish} backLabel="Back to campaign & ad set" title={false} />
+                <AdOnlyPanel account={account} form={form} target={dest.adset} productSets={productSets.data || []} onClose={() => go('DEST')} onDone={finish} backLabel="Back to campaign & ad set" title={false} />
               ) : (
                 <ReviewPanel
                   mode={mode}
@@ -326,36 +353,34 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
         ) : null}
       </div>
 
-      {/* Live preview and ad set summary */}
-      <aside className="ws-side" aria-label="Preview">
-        {type ? <AdPreview form={form} /> : <div className="preview"><div className="preview-empty">Pick an ad type to see a preview.</div></div>}
-        {dest ? (
-          <div className="card ws-dest">
-            <div className="label" style={{ marginBottom: 4 }}>Runs in</div>
-            {dest.kind === 'ADSET' ? (
-              <>
-                <div className="strong">{dest.adset.name}</div>
-                <div className="hint" style={{ marginTop: 2 }}>{dest.adset.campaign?.name} · {dest.adset.daily_budget || dest.adset.lifetime_budget ? adsetBudget(dest.adset, account.currency) : dest.adset.campaign ? `${budgetText(dest.adset.campaign, account.currency)} campaign budget` : 'Campaign budget'}</div>
-              </>
-            ) : (
-              <>
-                <div className="strong">{dest.kind === 'NEW_CAMPAIGN' ? form.campaign.name || 'New campaign' : form.adset.name || 'New ad set'}</div>
-                <div className="hint" style={{ marginTop: 2 }}>{dest.kind === 'NEW_ADSET' ? `New ad set in ${dest.campaign.name}` : 'New campaign and ad set'}{form.budget.amount ? ` · ${currencySymbol(account.currency)}${Number(form.budget.amount).toLocaleString('en-IN')}${form.budget.type === 'DAILY' ? '/day' : ' lifetime'}` : ''}</div>
-              </>
-            )}
-            {step !== 'DEST' ? <button type="button" className="btn-link" style={{ marginTop: 6 }} onClick={() => go('DEST')}>Change</button> : null}
-          </div>
-        ) : null}
+      {/* Live preview and the "Runs in" summary */}
+      <aside className="ws-side" aria-label="Preview" ref={sideRef}>
+        <div className="ws-side-inner" ref={sideInner}>
+        {type ? <AdPreview form={form} total={isCatalog ? setCount : undefined} /> : <div className="preview"><div className="preview-empty">Pick an ad type to see a preview.</div></div>}
+        {dest ? (() => {
+          const campaignName = dest.kind === 'NEW_CAMPAIGN' ? form.campaign.name || 'New campaign' : dest.kind === 'NEW_ADSET' ? dest.campaign.name : dest.adset.campaign?.name || '–';
+          const adsetName = dest.kind === 'ADSET' ? dest.adset.name : form.adset.name || 'New ad set';
+          const budget = dest.kind === 'ADSET'
+            ? (dest.adset.daily_budget || dest.adset.lifetime_budget ? `${adsetBudget(dest.adset, account.currency)} ad set budget` : dest.adset.campaign ? `${budgetText(dest.adset.campaign, account.currency)} campaign budget` : '')
+            : form.budget.amount ? `${currencySymbol(account.currency)}${Number(form.budget.amount).toLocaleString('en-IN')}${form.budget.type === 'DAILY' ? '/day' : ' lifetime'} ${form.budget.level === 'ADSET' ? 'ad set' : 'campaign'} budget` : '';
+          return (
+            <div className="card ws-dest">
+              <div className="label" style={{ marginBottom: 8 }}>Runs in</div>
+              <dl className="runs-in">
+                <dt>Campaign</dt><dd>{campaignName}{dest.kind === 'NEW_CAMPAIGN' ? <span className="tag">New</span> : null}</dd>
+                <dt>Ad set</dt><dd>{adsetName}{dest.kind !== 'ADSET' ? <span className="tag">New</span> : null}</dd>
+                <dt>Ad</dt><dd>{form.ad.name || '–'}<span className="tag">New</span></dd>
+              </dl>
+              {budget ? <div className="hint budget-line">{budget}</div> : null}
+              {step !== 'DEST' ? <button type="button" className="btn-link" style={{ marginTop: 8 }} onClick={() => go('DEST')}>Change</button> : null}
+            </div>
+          );
+        })() : null}
+        </div>
       </aside>
       </div>
     </div>
   );
-}
-
-function destLabel(d: Destination): string {
-  if (d.kind === 'ADSET') return d.adset.name;
-  if (d.kind === 'NEW_ADSET') return `New ad set in ${d.campaign.name}`;
-  return 'New campaign';
 }
 
 function StepHead({ title, sub }: { title: string; sub: string }) {
