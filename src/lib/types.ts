@@ -4,6 +4,8 @@ export type Mode = 'NEW' | 'EXISTING' | 'DUP_NEW' | 'DUP_EXISTING' | 'AD_ONLY';
 export interface GeoItem { key: string; name: string; type: string; country_code?: string }
 export interface LocaleItem { key: number; name: string }
 export interface InterestItem { id: string; name: string }
+/** A custom audience or lookalike of the ad account */
+export interface AudienceItem { id: string; name: string; subtype?: string }
 
 export interface AdAccount { id: string; account_id: string; name: string; currency: string; account_status?: number; business?: { id: string; name: string } }
 
@@ -77,8 +79,19 @@ export interface FormState {
     ageMax: number;
     gender: 'ALL' | 'MALE' | 'FEMALE';
     locales: LocaleItem[];
+    /** Custom audiences and lookalikes to include / exclude (they belong to the ad account) */
+    customAudiences: AudienceItem[];
+    excludedAudiences: AudienceItem[];
+    /** Advantage detailed targeting: Meta may go beyond the chosen interests when it expects better results */
+    expandInterests: boolean;
     placement: 'ADVANTAGE' | 'MANUAL';
     platforms: string[];
+    /** Manual placements: the positions ticked for Facebook and Instagram (all ticked = Meta's default, nothing is sent) */
+    fbPositions: string[];
+    igPositions: string[];
+    /** Devices; SOURCE = keep the duplicated ad set's own device targeting (specific devices or OS versions) */
+    devices: 'ALL' | 'MOBILE' | 'DESKTOP' | 'SOURCE';
+    os: ('iOS' | 'Android')[];
     attribution: string;
     /** Schedule: empty = start as soon as published (datetime-local value) */
     startTime: string;
@@ -94,7 +107,7 @@ export interface FormState {
     crossSellSourceSetId: string;
   };
   ad: {
-    /** CATALOG = catalog template ad; UPLOAD = new ad from an uploaded image or video; POST = existing FB/IG post; NONE = no ad */
+    /** CATALOG = catalog template ad; UPLOAD = new ad from an uploaded image; POST = existing FB/IG post; NONE = no ad */
     kind: 'CATALOG' | 'UPLOAD' | 'POST' | 'NONE';
     /** Duplicates: copy the original ad set's ads, and/or add a new ad */
     copyOriginal: boolean;
@@ -152,7 +165,7 @@ export interface FlowContext {
   needsAd: boolean;
   /** Catalog ad inside a campaign without a catalog (ad-level catalog and product set) */
   adLevelCatalog: boolean;
-  /** A normal (non-catalog) ad will be created: uploaded image/video or existing post */
+  /** A normal (non-catalog) ad will be created: uploaded image or existing post */
   needsStandardAd: boolean;
   /** Duplicate: copy the original ad set's ads */
   copyAds: boolean;
