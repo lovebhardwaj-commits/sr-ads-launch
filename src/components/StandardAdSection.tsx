@@ -5,6 +5,7 @@ import { apiGet, apiPost, apiPostBytes, errorText } from '@/lib/client-api';
 import { CTAS } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
 import type { FormState, PostMedia } from '@/lib/types';
+import AiCopy from './AiCopy';
 import { MediaModal } from './PostMedia';
 import { NormalPreview } from './AdPreview';
 import TrackingFields from './TrackingFields';
@@ -31,7 +32,7 @@ function frameOf(url: string): Promise<string> {
       c.getContext('2d')?.drawImage(v, 0, 0, c.width, c.height);
       resolve(c.toDataURL('image/jpeg', 0.85));
     };
-    v.onerror = () => reject(new Error('This video can\u2019t be read in the browser. Use an MP4 (H.264) or MOV file.'));
+    v.onerror = () => reject(new Error('This video can’t be read in the browser. Use an MP4 (H.264) or MOV file.'));
   });
 }
 
@@ -41,7 +42,7 @@ function pageWebsite(p?: Page): string {
   return /^https?:\/\//i.test(first) ? first : `https://${first}`;
 }
 
-/** Normal (non-catalog) ad: upload an image or video, or promote an existing Facebook / Instagram post. */
+/** Normal (non-catalog) ad: upload an image, or promote an existing Facebook / Instagram post. */
 export default function StandardAdSection({ form, setAd, accountId, allowSkip, allowCatalog = false, preview = true, hideSetup = false }: {
   form: FormState;
   setAd: (p: Partial<FormState['ad']>) => void;
@@ -157,6 +158,7 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
     }
   };
 
+
   return (
     <div className="card">
       {!hideSetup ? <Field label="Ad setup">
@@ -182,7 +184,7 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
             <TextInput value={ad.name} onChange={(e) => setAd({ name: e.target.value })} placeholder={ad.kind === 'POST' ? 'e.g. Diwali post · Boost' : 'e.g. Diwali sale · Image'} />
           </Field>
           <Field label="Facebook Page">
-            {pages.loading ? <Loading text="Loading Pages…" /> : pages.error ? <div className="notice bad">{pages.error}</div> : (
+            {pages.loading ? <Loading /> : pages.error ? <div className="notice bad">{pages.error}</div> : (
               <SearchSelect
                 value={ad.pageId}
                 onChange={(v) => setAd({ pageId: v, postId: '', postPreview: '' })}
@@ -204,6 +206,7 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
             </Field>
           ) : null}
 
+
           {ad.kind === 'UPLOAD' ? (
             <>
               <Field label="Image or video" hint="Image: JPG or PNG under 3 MB. Video: MP4 or MOV up to 1 GB. 1:1 or 4:5 works across Feed, Stories and Reels.">
@@ -211,9 +214,9 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
                   <input type="file" accept="image/jpeg,image/png,video/mp4,video/quicktime" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} style={{ display: 'none' }} disabled={uploading || ad.videoStatus === 'uploading'} />
                   {ad.imageUrl ? <img src={ad.imageUrl} alt="" /> : <ImagePlus size={22} strokeWidth={1.6} />}
                   <span>
-                    {uploading ? 'Uploading image to Meta\u2026'
-                      : ad.videoStatus === 'uploading' ? `Uploading video to Meta\u2026 ${Math.round(progress * 100)}%`
-                      : ad.imageName ? `${ad.imageName} \u00b7 change`
+                    {uploading ? 'Uploading image to Meta…'
+                      : ad.videoStatus === 'uploading' ? `Uploading video to Meta… ${Math.round(progress * 100)}%`
+                      : ad.imageName ? `${ad.imageName} · change`
                       : 'Choose an image or video'}
                   </span>
                 </label>
@@ -223,6 +226,7 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
                 {ad.videoStatus === 'error' ? <div className="notice bad" style={{ marginTop: 8 }}>Meta couldn&apos;t process this video. Upload a different file.</div> : null}
                 {uploadError ? <div className="notice bad" style={{ marginTop: 8 }}>{uploadError}</div> : null}
               </Field>
+              <AiCopy ad={ad} accountId={accountId} pageName={page?.name || ''} setAd={setAd} />
               <Field label="Primary text">
                 <textarea className="input" value={ad.message} onChange={(e) => setAd({ message: e.target.value })} rows={3} placeholder="Tell people what your ad is about" />
               </Field>
@@ -232,7 +236,7 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
               </div>
               <div className="row field">
                 <Field label="Call to action"><Select value={ad.cta} onChange={(v) => setAd({ cta: v })} options={CTAS} /></Field>
-                <Field label="Website URL" hint={page && !linkEdited ? (pageWebsite(page) ? 'From the Page\u2019s website.' : 'This Page has no website listed; enter one.') : undefined}>
+                <Field label="Website URL" hint={page && !linkEdited ? (pageWebsite(page) ? 'From the Page’s website.' : 'This Page has no website listed; enter one.') : undefined}>
                   <TextInput value={ad.link} onChange={(e) => { setLinkEdited(true); setAd({ link: e.target.value }); }} placeholder="https://yourstore.com" />
                 </Field>
               </div>
@@ -247,7 +251,7 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
                 />
               </Field>
               <Field label="Select post" hint="The post keeps its own text, media and engagement. Its call to action can't be changed.">
-                {!ad.pageId ? <div className="note">Select a Page first.</div> : posts.loading ? <Loading text="Loading posts…" /> : posts.error ? <div className="notice bad">{posts.error}</div> : !posts.data?.length ? (
+                {!ad.pageId ? <div className="note">Select a Page first.</div> : posts.loading ? <Loading /> : posts.error ? <div className="notice bad">{posts.error}</div> : !posts.data?.length ? (
                   <div className="note">No recent posts found.</div>
                 ) : (
                   <div className="post-grid" role="radiogroup" aria-label="Posts">

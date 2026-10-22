@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { CopyRequest } from '@/lib/ai-types';
+import { aiStatus, generateCopy } from '@/lib/ai-copy';
 import { graph, graphLog, GraphError } from '@/lib/graph';
 import { buildTargeting, launch } from '@/lib/launch';
 import { getSession } from '@/lib/session';
@@ -248,6 +250,10 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
       return { status: v.status?.video_status || 'processing', progress: v.status?.processing_progress ?? null };
     }
 
+    case 'ai-status':
+      // Whether AI writing is set up on this server (the button stays hidden when it isn't).
+      return aiStatus();
+
     case 'me':
       return graph.get('me', token, { fields: 'id,name' });
   }
@@ -299,6 +305,8 @@ async function handlePost(action: string, body: any, token: string): Promise<any
       if (!e) return { available: false, reason: 'Meta returned no estimate.' };
       return { available: true, ready: e.estimate_ready !== false, daily: e.estimate_dau ?? null, lower: e.estimate_mau_lower_bound ?? e.estimate_mau ?? null, upper: e.estimate_mau_upper_bound ?? e.estimate_mau ?? null };
     }
+    case 'ai-copy':
+      return generateCopy(body as CopyRequest, token);
     case 'launch':
       return launch(body as LaunchRequest, token);
   }
