@@ -10,7 +10,6 @@ import { Field, Loading, SearchSelect, Select } from './ui';
 
 interface Catalog { id: string; name: string; product_count?: number; vertical?: string; business?: string; shared?: boolean; relevance?: 'USED' | 'LINKED' | 'BUSINESS' }
 
-const RELEVANCE: Record<string, string> = { USED: 'Used in this ad account', LINKED: 'Linked to this ad account’s dataset' };
 type State = 'pass' | 'warn' | 'fail';
 interface Row { state: State; title: string; detail?: string; action?: 'link' }
 
@@ -149,6 +148,8 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
   const others = (catalogs.data || []).length - relevant.length;
   const sets = productSets.filter((s) => !q || s.name.toLowerCase().includes(q.toLowerCase()));
   const chosenSet = productSets.find((s) => s.id === productSetId);
+  // One loading message at a time: the readiness lines wait while the lists above are still loading.
+  const busy = catalogs.loading || !!pixelsLoading || productSetsLoading;
 
   return (
     <div className="card">
@@ -166,10 +167,11 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
               noun="catalogs"
               placeholder="Select a catalog..."
               searchPlaceholder="Search catalogs by name or ID"
+              // Name and product count only; the ID is shown just when two catalogs share a name (it is always searchable).
               options={listed.map((c) => ({
                 key: c.id,
                 label: c.name,
-                meta: [c.product_count != null ? `${c.product_count.toLocaleString('en-IN')} products` : '', RELEVANCE[c.relevance || ''] || (c.shared ? 'Shared with the business' : c.business ? `In ${c.business}` : ''), c.id].filter(Boolean).join(' · '),
+                meta: [c.product_count != null ? `${c.product_count.toLocaleString('en-IN')} products` : '', listed.some((o) => o.id !== c.id && o.name === c.name) ? c.id : ''].filter(Boolean).join(' · '),
               }))}
             />
             {relevant.length && others > 0 ? (
@@ -227,7 +229,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
 
       {catalogId && showHealth ? (
         <div className="health" aria-live="polite">
-          {health.loading ? <Loading /> : health.error ? <div className="notice bad">{health.error}</div> : result?.rows.map((r, i) => (
+          {health.loading ? (busy ? null : <Loading />) : health.error ? <div className="notice bad">{health.error}</div> : result?.rows.map((r, i) => (
             <div key={i} className={`health-row ${r.state}`}>
               <span className="icon">{ICON[r.state]}</span>
               <div>
