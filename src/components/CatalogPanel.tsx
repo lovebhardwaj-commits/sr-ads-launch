@@ -1,5 +1,5 @@
 'use client';
-import { AlertTriangle, CheckCircle2, Info, RefreshCw, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, errorText } from '@/lib/client-api';
 import { useAsync } from '@/lib/hooks';
@@ -10,8 +10,8 @@ import { Field, Loading, SearchSelect, Select } from './ui';
 
 interface Catalog { id: string; name: string; product_count?: number; vertical?: string; business?: string; shared?: boolean; relevance?: 'USED' | 'LINKED' | 'BUSINESS' }
 
-const RELEVANCE: Record<string, string> = { USED: 'Used in this ad account', LINKED: 'Linked to this ad account\u2019s dataset' };
-type State = 'pass' | 'warn' | 'fail' | 'info';
+const RELEVANCE: Record<string, string> = { USED: 'Used in this ad account', LINKED: 'Linked to this ad account’s dataset' };
+type State = 'pass' | 'warn' | 'fail';
 interface Row { state: State; title: string; detail?: string; action?: 'link' }
 
 export type SetLite = { id: string; name: string; product_count?: number; products?: { data?: { id: string; image_url?: string }[] } };
@@ -58,7 +58,7 @@ export function SetChecks({ setId, data }: { setId: string; data?: SetHealth }) 
 
 const isUnavailable = (x: any): x is { unavailable: string } => x && typeof x === 'object' && 'unavailable' in x;
 
-/** Turn the raw health payload into readable checks. */
+/** The two things a catalog ad needs: products in the catalog, and a pixel linked to it. */
 export function readHealth(h: any, pixelId: string): { rows: Row[]; ready: boolean } {
   const rows: Row[] = [];
   let ready = true;
@@ -85,56 +85,6 @@ export function readHealth(h: any, pixelId: string): { rows: Row[]; ready: boole
     ready = false;
   }
 
-  // Match rate (event_stats)
-  const stats = !isUnavailable(h.stats) ? (h.stats?.data || []) : [];
-  const byEvent = new Map<string, { m: number; u: number }>();
-  for (const r of stats) {
-    const ev = r.event || r.event_name;
-    if (!ev) continue;
-    const m = Number(r.total_matched_content_ids ?? r.matched ?? 0);
-    const u = Number(r.total_unmatched_content_ids ?? r.unmatched ?? 0) + Number(r.total_content_ids_matched_other_catalogs ?? 0);
-    const cur = byEvent.get(ev) || { m: 0, u: 0 };
-    byEvent.set(ev, { m: cur.m + m, u: cur.u + u });
-  }
-  const parts: string[] = [];
-  let worst = 101;
-  byEvent.forEach((v, k) => {
-    const total = v.m + v.u;
-    if (!total) return;
-    const pct = Math.round((v.m / total) * 100);
-    worst = Math.min(worst, pct);
-    parts.push(`${k} ${pct}%`);
-  });
-  if (parts.length) {
-    rows.push({
-      state: worst >= 75 ? 'pass' : worst >= 50 ? 'warn' : 'fail',
-      title: `Event match rate: ${parts.join(', ')}`,
-      detail: worst >= 75 ? undefined : 'Product IDs in pixel events should equal catalog IDs (on Shopify: variant IDs). Low matches mean ads show the wrong products.',
-    });
-  } else {
-    rows.push({ state: 'info', title: 'Match rate not available yet', detail: 'Meta shows it once the pixel has sent product events for this catalog.' });
-  }
-
-  // Pixel checks for catalog ads
-  if (h.checks && !isUnavailable(h.checks)) {
-    const failed = (h.checks.data || []).filter((c: any) => c.result && c.result !== 'passed');
-    if (failed.length) failed.slice(0, 3).forEach((c: any) => rows.push({ state: 'warn', title: c.title || c.key, detail: c.description }));
-    else if ((h.checks.data || []).length) rows.push({ state: 'pass', title: 'Pixel sends the events catalog ads need' });
-  }
-
-  // Catalog diagnostics
-  if (h.diagnostics && !isUnavailable(h.diagnostics)) {
-    const issues: string[] = [];
-    const walk = (x: any) => {
-      if (!x || typeof x !== 'object') return;
-      if (Array.isArray(x)) { x.forEach(walk); return; }
-      if (x.title && (x.num_items || x.severity)) issues.push(`${x.title}${x.num_items ? ` (${x.num_items})` : ''}`);
-      Object.values(x).forEach((v) => { if (typeof v === 'object') walk(v); });
-    };
-    walk(h.diagnostics.data);
-    if (issues.length) rows.push({ state: 'warn', title: `${issues.length} catalog ${issues.length === 1 ? 'issue' : 'issues'} in Commerce Manager`, detail: issues.slice(0, 3).join('; ') });
-  }
-
   return { rows, ready };
 }
 
@@ -142,7 +92,6 @@ const ICON: Record<State, JSX.Element> = {
   pass: <CheckCircle2 size={16} />,
   warn: <AlertTriangle size={16} />,
   fail: <XCircle size={16} />,
-  info: <Info size={16} />,
 };
 
 export default function CatalogPanel({ account, catalogId, locked, onCatalog, productSets, productSetsLoading, productSetsError, productSetId, onProductSet, pixelId, onReady, showHealth = true, pixels, pixelsLoading, onPixel }: {
@@ -235,7 +184,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
       </Field>
 
       {showHealth && onPixel ? (
-        <Field label="Dataset (pixel)" hint="The pixel that sends ViewContent, AddToCart and Purchase from your store. It must be linked to the catalog.">
+        <Field label="Dataset (pixel)">
           {pixelsLoading ? <Loading /> : (
             <Select value={pixelId} onChange={onPixel} placeholder="Select a dataset (pixel)..." options={(pixels || []).map((p) => ({ key: p.id, label: `${p.name} (${p.id})` }))} />
           )}
@@ -243,7 +192,7 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
       ) : null}
 
       {catalogId ? (
-        <Field label={`Product sets${productSets.length ? ` (${productSets.length})` : ''}`} hint="The products this ad set can show. Create or edit sets in Commerce Manager.">
+        <Field label={`Product sets${productSets.length ? ` (${productSets.length})` : ''}`}>
           {productSetsLoading ? <Loading /> : productSetsError ? <div className="notice bad">{productSetsError}</div> : !productSets.length ? (
             <div className="notice warn">This catalog has no product sets yet.</div>
           ) : chosenSet && !pickingSet ? (
@@ -254,7 +203,6 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
                 <span className="set-meta">{chosenSet.product_count != null ? `${chosenSet.product_count.toLocaleString('en-IN')} products` : ''}</span>
                 <button type="button" className="btn-link" onClick={() => setPickingSet(true)}>Change</button>
               </div>
-              <SetChecks setId={chosenSet.id} />
             </>
           ) : (
             <>
@@ -279,10 +227,6 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
 
       {catalogId && showHealth ? (
         <div className="health" aria-live="polite">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span className="label" style={{ margin: 0 }}>Catalog readiness</span>
-            <button type="button" className="btn-link" onClick={health.reload} disabled={health.loading}><RefreshCw size={12} style={{ verticalAlign: -1 }} /> Check again</button>
-          </div>
           {health.loading ? <Loading /> : health.error ? <div className="notice bad">{health.error}</div> : result?.rows.map((r, i) => (
             <div key={i} className={`health-row ${r.state}`}>
               <span className="icon">{ICON[r.state]}</span>
@@ -298,7 +242,6 @@ export default function CatalogPanel({ account, catalogId, locked, onCatalog, pr
               </div>
             </div>
           ))}
-          {result && !result.ready ? <div className="hint">Fix the red items to launch.</div> : null}
         </div>
       ) : null}
     </div>
