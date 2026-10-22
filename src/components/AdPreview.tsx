@@ -31,7 +31,7 @@ function usePage(pageId: string) {
 }
 
 /** Catalog ad preview: Feed carousel / single, Stories and Reels, with hover slideshow and click-to-enlarge. */
-export function CatalogPreview({ form, productSetId, compact = false }: { form: FormState; productSetId: string; compact?: boolean }) {
+export function CatalogPreview({ form, productSetId, compact = false, total }: { form: FormState; productSetId: string; compact?: boolean; total?: number }) {
   const ad = form.ad;
   const page = usePage(ad.pageId);
   const ig = page?.instagram_business_account;
@@ -86,7 +86,7 @@ export function CatalogPreview({ form, productSetId, compact = false }: { form: 
 
       {!productSetId ? (
         <div className="preview-empty">Pick a product set to preview real products.</div>
-      ) : products.loading ? <Loading text="Loading products…" /> : products.error ? <div className="notice warn">Preview unavailable: {products.error}</div> : !sample.length ? (
+      ) : products.loading ? <Loading /> : products.error ? <div className="notice warn">Preview unavailable: {products.error}</div> : !sample.length ? (
         <div className="preview-empty">This product set has no products to preview.</div>
       ) : placement === 'FEED' ? (
         <>
@@ -157,7 +157,7 @@ export function CatalogPreview({ form, productSetId, compact = false }: { form: 
 
       {productSetId && sample.length ? (
         <p className="hint">
-          {placement === 'FEED' ? `${sample.length} of ${all.length}${all.length >= 25 ? '+' : ''} products` : `Product ${Math.min(idx + 1, steps.length)} of ${steps.length}`}
+          {placement === 'FEED' ? `${sample.length} of ${total != null && total >= all.length ? total.toLocaleString('en-IN') : `${all.length}${all.length >= 25 ? '+' : ''}`} products` : `Product ${Math.min(idx + 1, steps.length)} of ${steps.length}`}
           {' · '}Click an image to enlarge{ad.media === 'SLIDESHOW' ? ', hover to play its slideshow' : ''}. Meta picks the products per shopper.
         </p>
       ) : null}
@@ -186,7 +186,7 @@ export function CatalogPreview({ form, productSetId, compact = false }: { form: 
   );
 }
 
-/** Image or video ad and existing post previews. */
+/** Image ad and existing post previews. */
 export function NormalPreview({ form }: { form: FormState }) {
   const ad = form.ad;
   const page = usePage(ad.pageId);
@@ -230,6 +230,6 @@ export function NormalPreview({ form }: { form: FormState }) {
   );
 }
 
-export default function AdPreview({ form }: { form: FormState }) {
-  return form.ad.kind === 'CATALOG' ? <CatalogPreview form={form} productSetId={form.adset.productSetId} /> : <NormalPreview form={form} />;
+export default function AdPreview({ form, total }: { form: FormState; total?: number }) {
+  return form.ad.kind === 'CATALOG' ? <CatalogPreview form={form} productSetId={form.adset.productSetId} total={total} /> : <NormalPreview form={form} />;
 }

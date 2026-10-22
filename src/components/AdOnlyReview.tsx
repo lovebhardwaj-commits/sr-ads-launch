@@ -1,15 +1,20 @@
 'use client';
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiPost, errorText } from '@/lib/client-api';
 import { apiGet } from '@/lib/client-api';
 import { CTAS, buildUrlTags } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
 import type { AdAccount, AdsetLite, FormState, LaunchResult } from '@/lib/types';
 import { adsetFacts } from './AdsetFacts';
+import type { ProductSet } from './LaunchForm';
 import ProductStrip from './ProductStrip';
+import ReviewGroups, { type ReviewRow } from './ReviewGroups';
 import { Segmented } from './ui';
 
-type Props = { account: AdAccount; form: FormState; target: AdsetLite; onClose: () => void; onDone: (r: LaunchResult) => void };
+/** Reverse journey: review and add the ad to an existing ad set. */
+type Props = { account: AdAccount; form: FormState; target: AdsetLite; onClose: () => void; onDone: (r: LaunchResult) => void; productSets?: ProductSet[] };
+
+const day = (s: string) => new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
 export default function AdOnlyReview(props: Props) {
   const { onClose } = props;
@@ -26,7 +31,7 @@ export default function AdOnlyReview(props: Props) {
 }
 
 /** Review and add the ad to an existing ad set; works in a dialog or on a page. */
-export function AdOnlyPanel({ account, form, target, onClose, onDone, backLabel = 'Back', title = true }: Props & { backLabel?: string; title?: boolean }) {
+export function AdOnlyPanel({ account, form, target, onClose, onDone, productSets, backLabel = 'Back', title = true }: Props & { backLabel?: string; title?: boolean }) {
   const [status, setStatus] = useState<'PAUSED' | 'ACTIVE'>('PAUSED');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<LaunchResult | null>(null);
@@ -36,25 +41,43 @@ export function AdOnlyPanel({ account, form, target, onClose, onDone, backLabel 
   const ad = form.ad;
   const isCatalog = ad.kind === 'CATALOG';
   const targetSet = target.promoted_object?.product_set_id;
+  // On a page the structure map above already names the campaign, ad set and ad; the dialog has no such map.
+  const page = title === false;
 
   const cta = CTAS.find((x) => x.key === ad.cta)?.label;
-  const rows: [string, string][] = [
-    ['Ad account', account.name],
-    ...adsetFacts(target, account),
-    ['Ad name', ad.name || `${target.name} - ${isCatalog ? 'Catalog ad' : 'Ad'}`],
-    ['Ad', isCatalog
-      ? `${ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} from catalog, "${cta}"`
-      : ad.kind === 'POST' ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post` : `New ${ad.videoId ? 'video' : 'image'} ad${ad.imageName ? ` (${ad.imageName})` : ''}, "${cta}"`],
-  ];
-  if (isCatalog) rows.push(['Products', targetSet ? 'From the ad set\u2019s product set' : 'From the product set chosen for the ad (ad-level catalog)']);
-  if (isCatalog) rows.push(['Clicks go to', ad.destination === 'APP_WEB' ? 'App, website as backup' : 'Website']);
-  // The ad tracks website events with the chosen dataset (pixel), else the ad set's own.
+  const facts = adsetFacts(target, account).filter(([k]) => !(page && (k === 'Campaign' || k === 'Ad set')));
+  const adsetRows: ReviewRow[] = [...(page ? [] : [['Ad account', account.name] as ReviewRow]), ...facts];
+
+  const setId = targetSet || form.adset.productSetId;
+  const set = productSets?.find((s) => s.id === setId);
+  const adRows: ReviewRow[] = [];
+  if (!page) adRows.push(['Ad name', ad.name || `${target.name} - ${isCatalog ? 'Catalog ad' : 'Ad'}`]);
+  adRows.push(['Format', isCatalog
+    ? `${ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} from catalog, “${cta}” button`
+    : ad.kind === 'POST' ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post` : `New ${ad.videoId ? 'video' : 'image'} ad${ad.imageName ? ` (${ad.imageName})` : ''}, “${cta}” button`]);
+  if (isCatalog) {
+    adRows.push(['Product set', set
+      ? `${set.name}${set.product_count != null ? ` · ${set.product_count.toLocaleString('en-IN')} products` : ''}${targetSet ? ' (the ad set’s own set)' : ''}`
+      : targetSet ? 'The ad set’s own product set' : 'The one chosen for this ad']);
+    adRows.push(['Clicks go to', ad.destination === 'APP_WEB' ? 'App, website as backup' : 'Website']);
+  }
+  if (isCatalog || ad.kind === 'UPLOAD') adRows.push([isCatalog ? 'See more URL' : 'Website', ad.link]);
+
+  // The ad tracks website events with the chosen dataset (pixel), else the ad set’s own.
   const trackPixel = form.adset.pixelId || target.promoted_object?.pixel_id || '';
   const pxName = (id: string) => { const p = pixels.data?.find((x) => x.id === id); return p ? `${p.name} (${p.id})` : id; };
-  rows.push(['Dataset (pixel)', trackPixel ? `${pxName(trackPixel)}, tracks website events for this ad` : 'None chosen']);
+  const trackRows: ReviewRow[] = [
+    ['Dataset (pixel)', trackPixel ? `${pxName(trackPixel)}, tracks website events for this ad` : 'None chosen'],
+    ['URL parameters', buildUrlTags(ad.urlTags || {}) || 'None'],
+  ];
   const pixelMismatch = !!(form.adset.pixelId && target.promoted_object?.pixel_id && form.adset.pixelId !== target.promoted_object.pixel_id);
-  if (isCatalog || ad.kind === 'UPLOAD') rows.push([isCatalog ? 'See more URL' : 'Website', ad.link]);
-  rows.push(['URL parameters', buildUrlTags(ad.urlTags || {}) || 'None']);
+
+  // Things that stop this ad from delivering even once it is added.
+  const heads: string[] = [];
+  const st = target.effective_status || target.status;
+  if (st === 'CAMPAIGN_PAUSED') heads.push('The campaign is paused, so your ad won’t deliver until the campaign is turned on in Ads Manager.');
+  else if (st === 'PAUSED') heads.push('This ad set is paused, so your ad won’t deliver until it is turned on in Ads Manager.');
+  if (target.end_time && new Date(target.end_time).getTime() < Date.now()) heads.push(`This ad set’s schedule ended on ${day(target.end_time)}. Extend it in Ads Manager, or your ad won’t deliver.`);
 
   const go = async () => {
     setBusy(true); setError(''); setFailed(null);
@@ -67,12 +90,15 @@ export function AdOnlyPanel({ account, form, target, onClose, onDone, backLabel 
   return (
     <>
         {title ? <><h2 id="adonly-title">Review &amp; Launch</h2><p className="note">Your ad is added to the existing ad set. The ad set&apos;s budget, audience and schedule stay as they are.</p></> : null}
-        <dl className="kv">{rows.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>
-        {isCatalog ? <div style={{ marginTop: 12 }}><ProductStrip setId={targetSet || form.adset.productSetId} label="Products the ad can show" /></div> : null}
-        {pixelMismatch ? (
-          <div className="notice warn" style={{ marginTop: 12 }}>This ad set optimises for <b>{pxName(target.promoted_object?.pixel_id || '')}</b>, but your ad tracks <b>{pxName(form.adset.pixelId)}</b>. Use the same dataset (pixel) unless you mean to track a different one.</div>
+        <ReviewGroups groups={[{ title: 'Ad set it joins', rows: adsetRows }, { title: 'Your ad', rows: adRows }, { title: 'Tracking', rows: trackRows }]} />
+        {isCatalog ? <div style={{ marginTop: 14 }}><ProductStrip setId={setId} label="Products the ad can show" total={set?.product_count} /></div> : null}
+        {heads.length || pixelMismatch || !trackPixel ? (
+          <div className="review-notes">
+            {heads.map((h) => <div key={h} className="notice warn">{h}</div>)}
+            {pixelMismatch ? <div className="notice warn">This ad set optimises for <b>{pxName(target.promoted_object?.pixel_id || '')}</b>, but your ad tracks <b>{pxName(form.adset.pixelId)}</b>. Use the same dataset (pixel) unless you mean to track a different one.</div> : null}
+            {!trackPixel ? <div className="notice warn">No dataset (pixel) is chosen, so Ads Manager won&apos;t track website events for this ad. Pick one in the Ad step.</div> : null}
+          </div>
         ) : null}
-        {!trackPixel ? <div className="notice warn" style={{ marginTop: 12 }}>No dataset (pixel) is chosen, so Ads Manager won&apos;t track website events for this ad. Pick one in the Ad step.</div> : null}
         <div className="field" style={{ marginTop: 18 }}>
           <span className="label">Start as</span>
           <Segmented value={status} onChange={setStatus} options={[{ key: 'PAUSED', label: 'Paused' }, { key: 'ACTIVE', label: 'Active' }]} />
@@ -89,7 +115,7 @@ export function AdOnlyPanel({ account, form, target, onClose, onDone, backLabel 
         ) : null}
         {error ? <div className="notice bad" style={{ marginTop: 16 }}>{error}</div> : null}
         <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>{backLabel}</button>
+          {!page ? <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>{backLabel}</button> : null}
           <button type="button" className="btn-primary" onClick={go} disabled={busy || (status === 'ACTIVE' && !understood)}>
             {busy ? <><span className="spinner" style={{ borderTopColor: '#fff' }} /> Launching…</> : status === 'ACTIVE' ? 'Add ad and start spending' : 'Add ad paused'}
           </button>
