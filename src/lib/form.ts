@@ -1,6 +1,6 @@
-import { attributionFromSpec, fromMinorUnits, goalFromOptimization, normalizeObjective } from './constants';
+import { normalizeObjective } from './constants';
 import { ALL_FB_POSITIONS, ALL_IG_POSITIONS } from './positions';
-import type { AdsetLite, CampaignLite, FlowContext, FormState, GeoItem, Mode } from './types';
+import type { CampaignLite, FlowContext, FormState, GeoItem, Mode } from './types';
 
 /** Default text for catalog ads; Meta fills the {{product.*}} tokens per product. Normal ads start empty. */
 export const CATALOG_AD_TEXT = {
@@ -59,8 +59,6 @@ export function defaultForm(catalog = false): FormState {
     },
     ad: {
       kind: catalog ? 'CATALOG' : 'UPLOAD',
-      copyOriginal: true,
-      addNew: false,
       adFirst: false,
       imageHash: '',
       imageUrl: '',
@@ -121,8 +119,8 @@ export function repeatForm(prev: FormState): FormState {
   };
 }
 
-export function buildContext(mode: Mode, form: FormState, campaign?: CampaignLite, source?: AdsetLite): FlowContext {
-  const needsCampaign = mode === 'NEW' || mode === 'DUP_NEW';
+export function buildContext(mode: Mode, form: FormState, campaign?: CampaignLite): FlowContext {
+  const needsCampaign = mode === 'NEW';
   const objective = needsCampaign ? form.campaign.objective : normalizeObjective(campaign?.objective);
   const existingCatalog = campaign?.promoted_object?.product_catalog_id || '';
   const isCatalog = needsCampaign
@@ -131,8 +129,6 @@ export function buildContext(mode: Mode, form: FormState, campaign?: CampaignLit
   const catalogId = needsCampaign ? form.campaign.catalogId : existingCatalog;
   const campaignHasBudget = !needsCampaign && !!(campaign?.daily_budget || campaign?.lifetime_budget);
   const adsetBudget = needsCampaign ? form.budget.level === 'ADSET' : !campaignHasBudget;
-  const isDup = mode === 'DUP_NEW' || mode === 'DUP_EXISTING';
-  const sourceIsCatalog = !!source?.promoted_object?.product_set_id;
   // Meta allows a catalog ad in a Sales campaign without a catalog: the ad carries its own product set.
   const adLevelCatalog = !isCatalog && form.ad.kind === 'CATALOG' && objective === 'OUTCOME_SALES';
   return {
@@ -144,112 +140,10 @@ export function buildContext(mode: Mode, form: FormState, campaign?: CampaignLit
     adsetBudget,
     campaignHasBudget,
     showBudget: needsCampaign || adsetBudget,
-    needsAd: (isCatalog || adLevelCatalog) && (!isDup || form.ad.addNew),
+    needsAd: isCatalog || adLevelCatalog,
     adLevelCatalog,
-    needsStandardAd: !isCatalog && (form.ad.kind === 'UPLOAD' || form.ad.kind === 'POST') && (!isDup || form.ad.addNew),
-    copyAds: isDup && form.ad.copyOriginal,
-    isDup,
-    catalogLocked: !needsCampaign || (isDup && sourceIsCatalog) || form.ad.adFirst,
+    needsStandardAd: !isCatalog && (form.ad.kind === 'UPLOAD' || form.ad.kind === 'POST'),
   };
-}
-
-/** Pre-fill the form from an ad set being duplicated. */
-export function formFromAdset(src: AdsetLite, currency: string, catalogId?: string): FormState {
-  const f = defaultForm(!!src.promoted_object?.product_set_id);
-  const campaign = src.campaign;
-  const isCatalog = !!src.promoted_object?.product_set_id;
-  const objective = normalizeObjective(campaign?.objective);
-  const t = src.targeting || {};
-
-  f.campaign.objective = objective;
-  f.campaign.catalogEnabled = isCatalog;
-  f.campaign.catalogId = catalogId || campaign?.promoted_object?.product_catalog_id || '';
-  if (src.bid_strategy) f.campaign.bidStrategy = src.bid_strategy;
-  if (src.bid_amount) f.campaign.bidAmount = fromMinorUnits(src.bid_amount, currency);
-
-  // The original ad set's own budget pre-fills the ad set budget; otherwise start on a campaign budget.
-  if (src.daily_budget) { f.budget = { ...f.budget, level: 'ADSET', type: 'DAILY', amount: fromMinorUnits(src.daily_budget, currency) }; }
-  else if (src.lifetime_budget) { f.budget = { ...f.budget, level: 'ADSET', type: 'LIFETIME', amount: fromMinorUnits(src.lifetime_budget, currency) }; }
-
-  const a = f.adset;
-  a.name = `${src.name} - Copy`;
-  a.goal = goalFromOptimization(objective, isCatalog, src.optimization_goal);
-  if (src.promoted_object?.custom_event_type) a.event = src.promoted_object.custom_event_type;
-  if (src.promoted_object?.pixel_id) a.pixelId = src.promoted_object.pixel_id;
-  if (src.promoted_object?.product_set_id) a.productSetId = src.promoted_object.product_set_id;
-
-  const geo = t.geo_locations || {};
-  const locs: GeoItem[] = [];
-  (geo.countries || []).forEach((c: string) => locs.push({ key: c, name: c, type: 'country', country_code: c }));
-  (geo.regions || []).forEach((r: { key: string; name?: string }) => locs.push({ key: String(r.key), name: r.name || String(r.key), type: 'region' }));
-  (geo.cities || []).forEach((c: { key: string; name?: string }) => locs.push({ key: String(c.key), name: c.name || String(c.key), type: 'city' }));
-  a.locations = locs.length ? locs : [];
-
-  if (t.age_min) a.ageMin = t.age_min;
-  if (t.age_max) a.ageMax = t.age_max;
-  if (Array.isArray(t.genders) && t.genders.length === 1) a.gender = t.genders[0] === 1 ? 'MALE' : 'FEMALE';
-  if (Array.isArray(t.locales)) a.locales = t.locales.map((k: number) => ({ key: k, name: `Language ${k}` }));
-
-  if (Array.isArray(t.flexible_spec) && t.flexible_spec.some((s: { interests?: unknown[] }) => s.interests?.length)) {
-    a.audienceType = 'INTEREST';
-    a.interests = t.flexible_spec.flatMap((s: { interests?: { id: string; name: string }[] }) => s.interests || []);
-  } else if (t.targeting_automation?.advantage_audience === 1) {
-    a.audienceType = 'ADVANTAGE';
-  } else {
-    // Custom audiences, lookalikes or plain demographics: keep the original audience as-is.
-    a.audienceType = 'SOURCE';
-  }
-
-  const aud = (x: { id: string | number; name?: string; subtype?: string }) => ({ id: String(x.id), name: x.name || String(x.id), subtype: x.subtype });
-  if (Array.isArray(t.custom_audiences)) a.customAudiences = t.custom_audiences.map(aud);
-  if (Array.isArray(t.excluded_custom_audiences)) a.excludedAudiences = t.excluded_custom_audiences.map(aud);
-  a.expandInterests = t.targeting_optimization === 'expansion_all';
-
-  if (Array.isArray(t.publisher_platforms) && t.publisher_platforms.length) {
-    a.placement = 'MANUAL';
-    a.platforms = t.publisher_platforms;
-  }
-  // Positions the launcher can represent are carried over; ones it can't (in-stream video, notifications...) are not.
-  if (Array.isArray(t.facebook_positions) && t.facebook_positions.length) a.fbPositions = ALL_FB_POSITIONS.filter((k) => t.facebook_positions.includes(k));
-  if (Array.isArray(t.instagram_positions) && t.instagram_positions.length) a.igPositions = ALL_IG_POSITIONS.filter((k) => t.instagram_positions.includes(k));
-  // Devices: plain mobile / desktop / iOS / Android are editable; anything finer (device models, OS versions) is kept as it is.
-  const os: string[] = Array.isArray(t.user_os) ? t.user_os : [];
-  const dp: string[] = Array.isArray(t.device_platforms) ? t.device_platforms : [];
-  if (os.length || dp.length || t.user_device?.length) {
-    const plainOs = os.every((o) => o === 'iOS' || o === 'Android');
-    if (t.user_device?.length || !plainOs) a.devices = 'SOURCE';
-    else if (os.length) { a.devices = 'MOBILE'; a.os = os as ('iOS' | 'Android')[]; }
-    else if (dp.length === 1 && dp[0] === 'mobile') a.devices = 'MOBILE';
-    else if (dp.length === 1 && dp[0] === 'desktop') a.devices = 'DESKTOP';
-  }
-  a.attribution = attributionFromSpec(src.attribution_spec);
-
-  if (isCatalog) {
-    const spec = Array.isArray(t.product_audience_specs) ? t.product_audience_specs[0] : undefined;
-    if (spec) {
-      const events: string[] = (spec.inclusions || []).map((i: { rule?: { event?: { eq?: string } } }) => i.rule?.event?.eq).filter(Boolean);
-      const days = Math.round(((spec.inclusions?.[0]?.retention_seconds as number) || 14 * 86400) / 86400);
-      a.retargetEvents = events.length ? events : a.retargetEvents;
-      a.retargetDays = days;
-      a.excludePurchasers = !!spec.exclusions?.length;
-      if (spec.exclusions?.[0]?.retention_seconds) a.excludeDays = Math.round(spec.exclusions[0].retention_seconds / 86400);
-      a.catalogAudience = 'RETARGET';
-      const sorted = [...events].sort().join(',');
-      if (spec.product_set_id && spec.product_set_id !== a.productSetId) {
-        a.retargetPreset = events.includes('Purchase') ? 'CROSS_SELL' : 'UPSELL';
-        a.crossSellSourceSetId = spec.product_set_id;
-      } else if (a.excludePurchasers && a.excludeDays === days && sorted === 'AddToCart,ViewContent') {
-        a.retargetPreset = 'VIEWED_OR_ATC';
-      } else if (a.excludePurchasers && a.excludeDays === days && sorted === 'AddToCart') {
-        a.retargetPreset = 'ATC';
-      } else {
-        a.retargetPreset = 'CUSTOM';
-      }
-    } else {
-      a.catalogAudience = 'BROAD';
-    }
-  }
-  return f;
 }
 
 export interface Missing { key: string; label: string }
@@ -294,10 +188,8 @@ export function validate(form: FormState, ctx: FlowContext, opts: { goalNeedsPix
   if (a.ageMin > a.ageMax) m.push({ key: 'adset.age', label: 'Min age below max age' });
   if (a.placement === 'MANUAL' && !a.platforms.length) m.push({ key: 'adset.platforms', label: 'At least one placement' });
   if (a.placement === 'MANUAL') m.push(...validatePositions(a));
-  const ad = form.ad;
   if (ctx.needsAd) m.push(...validateAd(form, true, ctx.adLevelCatalog));
   if (ctx.needsStandardAd) m.push(...validateAd(form, false));
-  if (ctx.isDup && !ad.copyOriginal && !ad.addNew) m.push({ key: 'ad.none', label: 'Copy the original ads or add a new ad' });
   return m;
 }
 

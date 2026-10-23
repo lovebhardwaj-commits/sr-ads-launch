@@ -7,16 +7,6 @@ import type { FlowContext, FormState, LaunchRequest, LaunchResult } from './type
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const CONTROLLED_KEYS = [
-  'geo_locations', 'age_min', 'age_max', 'genders', 'locales',
-  'publisher_platforms', 'facebook_positions', 'instagram_positions', 'audience_network_positions', 'messenger_positions',
-  'product_audience_specs', 'excluded_product_audience_specs',
-];
-// Rebuilt from the form unless the audience is kept "as in the original ad set".
-const AUDIENCE_KEYS = ['flexible_spec', 'targeting_automation', 'interests', 'custom_audiences', 'excluded_custom_audiences', 'targeting_optimization'];
-// Kept from the original ad set only when its device targeting is kept as it is (specific devices, OS versions).
-const DEVICE_KEYS = ['device_platforms', 'user_os', 'user_device'];
-
 const uniqueById = <T extends { id: string | number }>(list: T[]): T[] => list.filter((x, i) => list.findIndex((y) => String(y.id) === String(x.id)) === i);
 
 /** Custom audiences, their exclusions and Advantage detailed targeting from the form. `merge` adds to a saved audience's own. */
@@ -39,7 +29,7 @@ function geo(form: FormState) {
   return g;
 }
 
-export function buildTargeting(form: FormState, ctx: FlowContext, base?: any, saved?: any): any {
+export function buildTargeting(form: FormState, ctx: FlowContext, saved?: any): any {
   const a = form.adset;
   let t: any;
 
@@ -68,14 +58,6 @@ export function buildTargeting(form: FormState, ctx: FlowContext, base?: any, sa
     }
   } else {
     t = {};
-    if (base) {
-      for (const [k, v] of Object.entries(base)) {
-        if (CONTROLLED_KEYS.includes(k)) continue;
-        if (DEVICE_KEYS.includes(k) && a.devices !== 'SOURCE') continue;
-        if (a.audienceType !== 'SOURCE' && AUDIENCE_KEYS.includes(k)) continue;
-        t[k] = v;
-      }
-    }
     t.geo_locations = geo(form);
     t.age_min = a.ageMin;
     if (a.audienceType === 'ADVANTAGE') {
@@ -94,7 +76,6 @@ export function buildTargeting(form: FormState, ctx: FlowContext, base?: any, sa
         t.targeting_automation = { advantage_audience: 0 };
         addAudienceOptions(t, a, false);
       }
-      if (a.audienceType === 'SOURCE' && !t.targeting_automation) t.targeting_automation = { advantage_audience: 0 };
     }
     if (a.locales.length) t.locales = a.locales.map((l) => l.key);
   }
@@ -105,9 +86,7 @@ export function buildTargeting(form: FormState, ctx: FlowContext, base?: any, sa
     if (a.platforms.includes('facebook') && a.fbPositions.length && a.fbPositions.length < ALL_FB_POSITIONS.length) t.facebook_positions = a.fbPositions;
     if (a.platforms.includes('instagram') && a.igPositions.length && a.igPositions.length < ALL_IG_POSITIONS.length) t.instagram_positions = a.igPositions;
   }
-  if (a.devices === 'SOURCE') {
-    if (base) for (const k of DEVICE_KEYS) if (base[k] !== undefined) t[k] = base[k];
-  } else if (a.devices === 'MOBILE') {
+  if (a.devices === 'MOBILE') {
     t.device_platforms = ['mobile'];
     if (a.os.length) t.user_os = a.os;
   } else if (a.devices === 'DESKTOP') {
@@ -257,7 +236,7 @@ function tracking(pixelId?: string) {
 export async function launch(req: LaunchRequest, token: string): Promise<LaunchResult> {
   const { accountId, currency, mode, form } = req;
   const act = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
-  const ctx = buildContext(mode, form, req.existingCampaign, req.sourceAdset);
+  const ctx = buildContext(mode, form, req.existingCampaign);
   const result: LaunchResult = { ok: false, created: { ads: [] }, activated: false };
   let step = 'campaign';
 
@@ -311,11 +290,11 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
       const s = await graph.get<{ targeting: any }>(form.adset.savedAudienceId, token, { fields: 'targeting' });
       saved = s.targeting;
     }
-    const targeting = buildTargeting(form, ctx, req.sourceAdset?.targeting, saved);
+    const targeting = buildTargeting(form, ctx, saved);
     const adset = await graph.post<{ id: string }>(`${act}/adsets`, token, adsetParams(form, ctx, currency, campaignId, targeting));
     result.created.adset = { id: adset.id, name: form.adset.name.trim() };
 
-    // 3a. New ad: catalog template, or a normal ad from an uploaded image / existing post
+    // 3. The ad: a catalog template, or a normal ad from an uploaded image / video or an existing post
     if (ctx.needsAd || ctx.needsStandardAd) {
       step = 'creative';
       const creative = await graph.post<{ id: string }>(`${act}/adcreatives`, token, ctx.needsAd ? creativeParams(form) : standardCreativeParams(form));
@@ -330,20 +309,6 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
         ...tracking(form.adset.pixelId),
       });
       result.created.ads.push({ id: ad.id, name: adName });
-    }
-
-    // 3b. Duplicate: copy every ad of the source ad set into the new one
-    if (ctx.copyAds && req.sourceAdset) {
-      step = 'copy ads';
-      const ads = await graph.list<{ id: string; name: string }>(`${req.sourceAdset.id}/ads`, token, { fields: 'id,name', limit: 100 });
-      for (const ad of ads) {
-        const copy = await graph.post<{ copied_ad_id?: string; ad_object_ids?: { copied_id: string }[] }>(`${ad.id}/copies`, token, {
-          adset_id: adset.id,
-          status_option: 'PAUSED',
-        });
-        const id = copy.copied_ad_id || copy.ad_object_ids?.[0]?.copied_id || '';
-        result.created.ads.push({ id, name: ad.name });
-      }
     }
 
     // 4. Activate everything we created

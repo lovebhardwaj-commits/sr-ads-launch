@@ -1,5 +1,5 @@
-/** AD_ONLY = reverse journey: an ad built first, added to an existing ad set */
-export type Mode = 'NEW' | 'EXISTING' | 'DUP_NEW' | 'DUP_EXISTING' | 'AD_ONLY';
+/** Where the ad goes: NEW = a new campaign with its first ad set, EXISTING = a new ad set in an existing campaign, AD_ONLY = an existing ad set */
+export type Mode = 'NEW' | 'EXISTING' | 'AD_ONLY';
 
 export interface GeoItem { key: string; name: string; type: string; country_code?: string }
 export interface LocaleItem { key: number; name: string }
@@ -70,8 +70,7 @@ export interface FormState {
     goal: string;
     event: string;
     pixelId: string;
-    /** SOURCE = keep the duplicated ad set's audience (custom audiences, lookalikes) */
-    audienceType: 'ADVANTAGE' | 'INTEREST' | 'SAVED' | 'SOURCE';
+    audienceType: 'ADVANTAGE' | 'INTEREST' | 'SAVED';
     interests: InterestItem[];
     savedAudienceId: string;
     locations: GeoItem[];
@@ -89,8 +88,7 @@ export interface FormState {
     /** Manual placements: the positions ticked for Facebook and Instagram (all ticked = Meta's default, nothing is sent) */
     fbPositions: string[];
     igPositions: string[];
-    /** Devices; SOURCE = keep the duplicated ad set's own device targeting (specific devices or OS versions) */
-    devices: 'ALL' | 'MOBILE' | 'DESKTOP' | 'SOURCE';
+    devices: 'ALL' | 'MOBILE' | 'DESKTOP';
     os: ('iOS' | 'Android')[];
     attribution: string;
     /** Schedule: empty = start as soon as published (datetime-local value) */
@@ -107,12 +105,9 @@ export interface FormState {
     crossSellSourceSetId: string;
   };
   ad: {
-    /** CATALOG = catalog template ad; UPLOAD = new ad from an uploaded image; POST = existing FB/IG post; NONE = no ad */
-    kind: 'CATALOG' | 'UPLOAD' | 'POST' | 'NONE';
-    /** Duplicates: copy the original ad set's ads, and/or add a new ad */
-    copyOriginal: boolean;
-    addNew: boolean;
-    /** Reverse journey: the ad was built before choosing where it goes */
+    /** CATALOG = catalog template ad; UPLOAD = new ad from an uploaded image or video; POST = existing FB/IG post */
+    kind: 'CATALOG' | 'UPLOAD' | 'POST';
+    /** The ad is built before choosing where it goes (always true: every flow starts with the ad) */
     adFirst: boolean;
     imageHash: string;
     imageUrl: string;
@@ -167,11 +162,6 @@ export interface FlowContext {
   adLevelCatalog: boolean;
   /** A normal (non-catalog) ad will be created: uploaded image or existing post */
   needsStandardAd: boolean;
-  /** Duplicate: copy the original ad set's ads */
-  copyAds: boolean;
-  isDup: boolean;
-  /** Catalog choice is fixed (existing catalog campaign, or duplicating a catalog ad set) */
-  catalogLocked: boolean;
 }
 
 export interface LaunchRequest {
@@ -181,7 +171,6 @@ export interface LaunchRequest {
   status: 'PAUSED' | 'ACTIVE';
   form: FormState;
   existingCampaign?: CampaignLite;
-  sourceAdset?: AdsetLite;
   /** AD_ONLY: the existing ad set the ad is added to */
   targetAdset?: AdsetLite;
 }
