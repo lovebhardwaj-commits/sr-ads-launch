@@ -9,7 +9,6 @@ import type { FormState, PostMedia } from '@/lib/types';
 import { startProxy } from '@/lib/video-proxy';
 import AiCopy from './AiCopy';
 import { MediaModal } from './PostMedia';
-import { NormalPreview } from './AdPreview';
 import TrackingFields from './TrackingFields';
 import { Field, Loading, SearchSelect, Segmented, Select, TextInput, Toggle } from './ui';
 
@@ -44,18 +43,11 @@ function pageWebsite(p?: Page): string {
   return /^https?:\/\//i.test(first) ? first : `https://${first}`;
 }
 
-/** Normal (non-catalog) ad: upload an image, or promote an existing Facebook / Instagram post. */
-export default function StandardAdSection({ form, setAd, accountId, allowSkip, allowCatalog = false, preview = true, hideSetup = false }: {
+/** Normal (non-catalog) ad: upload an image or video, or promote an existing Facebook / Instagram post. */
+export default function StandardAdSection({ form, setAd, accountId }: {
   form: FormState;
   setAd: (p: Partial<FormState['ad']>) => void;
   accountId: string;
-  allowSkip: boolean;
-  /** Sales campaigns: offer a catalog ad without a campaign-level catalog */
-  allowCatalog?: boolean;
-  /** Render the live preview below the form (off when it is shown in a side panel) */
-  preview?: boolean;
-  /** Hide the ad type switch (chosen elsewhere) */
-  hideSetup?: boolean;
 }) {
   const ad = form.ad;
   const pages = useAsync<Page[]>('pages', () => apiGet('pages'));
@@ -75,15 +67,12 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
 
   // Product tokens only work in catalog ads; clear them if the text came from a catalog setup.
   useEffect(() => {
-    // Catalog ads need a Sales campaign; fall back to a normal ad otherwise.
-    if (ad.kind === 'CATALOG' && !allowCatalog) { setAd({ kind: 'UPLOAD' }); return; }
-    if (ad.kind === 'CATALOG') return;
     const strip = (t: string) => (t.includes('{{product.') ? '' : t);
     if ([ad.message, ad.headline, ad.description].some((t) => t.includes('{{product.'))) {
       setAd({ message: strip(ad.message), headline: strip(ad.headline), description: strip(ad.description) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ad.kind, allowCatalog]);
+  }, [ad.kind]);
 
   useEffect(() => {
     setAd({ instagramUserId: ig?.id || '' });
@@ -190,138 +179,116 @@ export default function StandardAdSection({ form, setAd, accountId, allowSkip, a
 
   return (
     <div className="card">
-      {!hideSetup ? <Field label="Ad setup">
-        <Segmented
-          value={ad.kind === 'CATALOG' && !allowCatalog ? 'UPLOAD' : ad.kind}
-          onChange={(v) => setAd({ kind: v })}
-          options={[
-            { key: 'UPLOAD', label: 'Create ad' },
-            { key: 'POST', label: 'Use existing post' },
-            ...(allowCatalog ? [{ key: 'CATALOG' as const, label: 'Catalog ad' }] : []),
-            ...(allowSkip ? [{ key: 'NONE' as const, label: 'Skip, add ads later' }] : []),
-          ]}
-        />
-      </Field> : null}
+      <Field label="Ad name">
+        <TextInput value={ad.name} onChange={(e) => setAd({ name: e.target.value })} placeholder={ad.kind === 'POST' ? 'e.g. Diwali post · Boost' : 'e.g. Diwali sale · Image'} />
+      </Field>
+      <Field label="Facebook Page">
+        {pages.loading ? <Loading /> : pages.error ? <div className="notice bad">{pages.error}</div> : (
+          <SearchSelect
+            value={ad.pageId}
+            onChange={(v) => setAd({ pageId: v, postId: '', postPreview: '' })}
+            ariaLabel="Facebook Page"
+            noun="Pages"
+            placeholder="Select a Page..."
+            searchPlaceholder={`Search ${(pages.data || []).length.toLocaleString('en-IN')} Pages by name or ID`}
+            options={(pages.data || []).map((p) => ({ key: p.id, label: p.name, meta: [p.id, p.instagram_business_account?.username ? `@${p.instagram_business_account.username}` : ''].filter(Boolean).join(' · ') }))}
+          />
+        )}
+      </Field>
+      {page && ad.kind === 'UPLOAD' ? (
+        <Field>
+          {ig ? (
+            <Toggle checked={!!ad.instagramUserId} onChange={(v) => setAd({ instagramUserId: v ? ig.id : '' })} label={<>Run on Instagram as <span className="strong">@{ig.username || ig.id}</span></>} />
+          ) : (
+            <p className="hint" style={{ margin: 0 }}>This Page has no connected Instagram account, so Instagram placements use the Page name.</p>
+          )}
+        </Field>
+      ) : null}
 
-      {ad.kind === 'CATALOG' && allowCatalog ? (
-        <p className="hint">Shows products from a catalog in this ad. The campaign doesn&apos;t need a catalog: pick the catalog and product set below.</p>
-      ) : ad.kind === 'NONE' ? (
-        <p className="hint">The ad set is launched without ads. Add ads to it later in Ads Manager or Create Ads.</p>
+
+      {ad.kind === 'UPLOAD' ? (
+        <>
+          <Field label="Image or video" hint="Image: JPG or PNG under 3 MB. Video: MP4 or MOV up to 1 GB. 1:1 or 4:5 works across Feed, Stories and Reels.">
+            <label className="upload">
+              <input type="file" accept="image/jpeg,image/png,video/mp4,video/quicktime" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} style={{ display: 'none' }} disabled={uploading || ad.videoStatus === 'uploading'} />
+              {ad.imageUrl ? <img src={ad.imageUrl} alt="" /> : <ImagePlus size={22} strokeWidth={1.6} />}
+              <span>
+                {uploading ? 'Uploading image to Meta…'
+                  : ad.videoStatus === 'uploading' ? `Uploading video to Meta… ${Math.round(progress * 100)}%`
+                  : ad.imageName ? `${ad.imageName} · change`
+                  : 'Choose an image or video'}
+              </span>
+            </label>
+            {ad.videoStatus === 'uploading' ? <div className="progress" aria-label="Upload progress"><i style={{ width: `${Math.round(progress * 100)}%` }} /></div> : null}
+            {ad.videoStatus === 'processing' ? (
+              <div className="hint">
+                Meta is processing the video{procPct != null && procPct > 0 ? `: ${procPct}%` : ''}. This usually takes under a minute; you can keep editing.{' '}
+                <button type="button" className="btn-link" onClick={() => checkNow.current()}>Check now</button>
+              </div>
+            ) : null}
+            {ad.videoStatus === 'ready' ? <div className="hint" style={{ color: 'var(--ok)' }}>Video ready on Meta.</div> : null}
+            {ad.videoStatus === 'error' ? <div className="notice bad" style={{ marginTop: 8 }}>Meta couldn&apos;t process this video. Upload a different file.</div> : null}
+            {uploadError ? <div className="notice bad" style={{ marginTop: 8 }}>{uploadError}</div> : null}
+          </Field>
+          <AiCopy ad={ad} accountId={accountId} pageName={page?.name || ''} setAd={setAd} />
+          <Field label="Primary text">
+            <textarea className="input" value={ad.message} onChange={(e) => setAd({ message: e.target.value })} rows={3} placeholder="Tell people what your ad is about" />
+          </Field>
+          <div className="row field">
+            <Field label="Headline"><TextInput value={ad.headline} onChange={(e) => setAd({ headline: e.target.value })} placeholder="Write a short headline" /></Field>
+            <Field label="Description"><TextInput value={ad.description} onChange={(e) => setAd({ description: e.target.value })} placeholder="Optional" /></Field>
+          </div>
+          <div className="row field">
+            <Field label="Call to action"><Select value={ad.cta} onChange={(v) => setAd({ cta: v })} options={CTAS} /></Field>
+            <Field label="Website URL" hint={page && !linkEdited ? (pageWebsite(page) ? 'From the Page’s website.' : 'This Page has no website listed; enter one.') : undefined}>
+              <TextInput value={ad.link} onChange={(e) => { setLinkEdited(true); setAd({ link: e.target.value }); }} placeholder="https://yourstore.com" />
+            </Field>
+          </div>
+        </>
       ) : (
         <>
-          <Field label="Ad name">
-            <TextInput value={ad.name} onChange={(e) => setAd({ name: e.target.value })} placeholder={ad.kind === 'POST' ? 'e.g. Diwali post · Boost' : 'e.g. Diwali sale · Image'} />
+          <Field label="Post from">
+            <Segmented
+              value={ad.postSource}
+              onChange={(v) => setAd({ postSource: v, postId: '', postPreview: '' })}
+              options={[{ key: 'FACEBOOK', label: 'Facebook Page' }, { key: 'INSTAGRAM', label: 'Instagram account', disabled: !ig, title: !ig ? 'This Page has no connected Instagram account' : undefined }]}
+            />
           </Field>
-          <Field label="Facebook Page">
-            {pages.loading ? <Loading /> : pages.error ? <div className="notice bad">{pages.error}</div> : (
-              <SearchSelect
-                value={ad.pageId}
-                onChange={(v) => setAd({ pageId: v, postId: '', postPreview: '' })}
-                ariaLabel="Facebook Page"
-                noun="Pages"
-                placeholder="Select a Page..."
-                searchPlaceholder={`Search ${(pages.data || []).length.toLocaleString('en-IN')} Pages by name or ID`}
-                options={(pages.data || []).map((p) => ({ key: p.id, label: p.name, meta: [p.id, p.instagram_business_account?.username ? `@${p.instagram_business_account.username}` : ''].filter(Boolean).join(' · ') }))}
-              />
+          <Field label="Select post" hint="The post keeps its own text, media and engagement. Its call to action can't be changed.">
+            {!ad.pageId ? <div className="note">Select a Page first.</div> : posts.loading ? <Loading /> : posts.error ? <div className="notice bad">{posts.error}</div> : !posts.data?.length ? (
+              <div className="note">No recent posts found.</div>
+            ) : (
+              <div className="post-grid" role="radiogroup" aria-label="Posts">
+                {posts.data.map((p) => {
+                  const pick = () => setAd({ postId: p.id, postPreview: p.image, postMedia: p.media || [] });
+                  const isVideo = (p.media || []).some((m) => m.type === 'video');
+                  const many = (p.media || []).length > 1;
+                  return (
+                    <div key={p.id} role="radio" tabIndex={0} aria-checked={ad.postId === p.id} className={`post ${ad.postId === p.id ? 'on' : ''}`} onClick={pick} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}>
+                      <span className="thumb" style={{ backgroundImage: p.image ? `url("${p.image}")` : undefined }}>
+                        {isVideo || many ? (
+                          <button type="button" className="play-chip" onClick={(e) => { e.stopPropagation(); setPlaying(p); }} aria-label={isVideo ? 'Play video' : 'View all items'}>
+                            {isVideo ? <><Play size={12} fill="#fff" color="#fff" /> Play</> : `View ${p.media!.length}`}
+                          </button>
+                        ) : null}
+                      </span>
+                      <span className="cap">{p.text ? p.text.slice(0, 70) : 'No caption'}</span>
+                      <span className="when">{p.time ? new Date(p.time).toLocaleDateString('en-IN') : ''}{p.type === 'REELS' ? ' · Reel' : isVideo ? ' · Video' : many ? ' · Carousel' : ''}</span>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </Field>
-          {page && ad.kind === 'UPLOAD' ? (
-            <Field>
-              {ig ? (
-                <Toggle checked={!!ad.instagramUserId} onChange={(v) => setAd({ instagramUserId: v ? ig.id : '' })} label={<>Run on Instagram as <span className="strong">@{ig.username || ig.id}</span></>} />
-              ) : (
-                <p className="hint" style={{ margin: 0 }}>This Page has no connected Instagram account, so Instagram placements use the Page name.</p>
-              )}
-            </Field>
-          ) : null}
-
-
-          {ad.kind === 'UPLOAD' ? (
-            <>
-              <Field label="Image or video" hint="Image: JPG or PNG under 3 MB. Video: MP4 or MOV up to 1 GB. 1:1 or 4:5 works across Feed, Stories and Reels.">
-                <label className="upload">
-                  <input type="file" accept="image/jpeg,image/png,video/mp4,video/quicktime" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} style={{ display: 'none' }} disabled={uploading || ad.videoStatus === 'uploading'} />
-                  {ad.imageUrl ? <img src={ad.imageUrl} alt="" /> : <ImagePlus size={22} strokeWidth={1.6} />}
-                  <span>
-                    {uploading ? 'Uploading image to Meta…'
-                      : ad.videoStatus === 'uploading' ? `Uploading video to Meta… ${Math.round(progress * 100)}%`
-                      : ad.imageName ? `${ad.imageName} · change`
-                      : 'Choose an image or video'}
-                  </span>
-                </label>
-                {ad.videoStatus === 'uploading' ? <div className="progress" aria-label="Upload progress"><i style={{ width: `${Math.round(progress * 100)}%` }} /></div> : null}
-                {ad.videoStatus === 'processing' ? (
-                  <div className="hint">
-                    Meta is processing the video{procPct != null && procPct > 0 ? `: ${procPct}%` : ''}. This usually takes under a minute; you can keep editing.{' '}
-                    <button type="button" className="btn-link" onClick={() => checkNow.current()}>Check now</button>
-                  </div>
-                ) : null}
-                {ad.videoStatus === 'ready' ? <div className="hint" style={{ color: 'var(--ok)' }}>Video ready on Meta.</div> : null}
-                {ad.videoStatus === 'error' ? <div className="notice bad" style={{ marginTop: 8 }}>Meta couldn&apos;t process this video. Upload a different file.</div> : null}
-                {uploadError ? <div className="notice bad" style={{ marginTop: 8 }}>{uploadError}</div> : null}
-              </Field>
-              <AiCopy ad={ad} accountId={accountId} pageName={page?.name || ''} setAd={setAd} />
-              <Field label="Primary text">
-                <textarea className="input" value={ad.message} onChange={(e) => setAd({ message: e.target.value })} rows={3} placeholder="Tell people what your ad is about" />
-              </Field>
-              <div className="row field">
-                <Field label="Headline"><TextInput value={ad.headline} onChange={(e) => setAd({ headline: e.target.value })} placeholder="Write a short headline" /></Field>
-                <Field label="Description"><TextInput value={ad.description} onChange={(e) => setAd({ description: e.target.value })} placeholder="Optional" /></Field>
-              </div>
-              <div className="row field">
-                <Field label="Call to action"><Select value={ad.cta} onChange={(v) => setAd({ cta: v })} options={CTAS} /></Field>
-                <Field label="Website URL" hint={page && !linkEdited ? (pageWebsite(page) ? 'From the Page’s website.' : 'This Page has no website listed; enter one.') : undefined}>
-                  <TextInput value={ad.link} onChange={(e) => { setLinkEdited(true); setAd({ link: e.target.value }); }} placeholder="https://yourstore.com" />
-                </Field>
-              </div>
-            </>
-          ) : (
-            <>
-              <Field label="Post from">
-                <Segmented
-                  value={ad.postSource}
-                  onChange={(v) => setAd({ postSource: v, postId: '', postPreview: '' })}
-                  options={[{ key: 'FACEBOOK', label: 'Facebook Page' }, { key: 'INSTAGRAM', label: 'Instagram account', disabled: !ig, title: !ig ? 'This Page has no connected Instagram account' : undefined }]}
-                />
-              </Field>
-              <Field label="Select post" hint="The post keeps its own text, media and engagement. Its call to action can't be changed.">
-                {!ad.pageId ? <div className="note">Select a Page first.</div> : posts.loading ? <Loading /> : posts.error ? <div className="notice bad">{posts.error}</div> : !posts.data?.length ? (
-                  <div className="note">No recent posts found.</div>
-                ) : (
-                  <div className="post-grid" role="radiogroup" aria-label="Posts">
-                    {posts.data.map((p) => {
-                      const pick = () => setAd({ postId: p.id, postPreview: p.image, postMedia: p.media || [] });
-                      const isVideo = (p.media || []).some((m) => m.type === 'video');
-                      const many = (p.media || []).length > 1;
-                      return (
-                        <div key={p.id} role="radio" tabIndex={0} aria-checked={ad.postId === p.id} className={`post ${ad.postId === p.id ? 'on' : ''}`} onClick={pick} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}>
-                          <span className="thumb" style={{ backgroundImage: p.image ? `url("${p.image}")` : undefined }}>
-                            {isVideo || many ? (
-                              <button type="button" className="play-chip" onClick={(e) => { e.stopPropagation(); setPlaying(p); }} aria-label={isVideo ? 'Play video' : 'View all items'}>
-                                {isVideo ? <><Play size={12} fill="#fff" color="#fff" /> Play</> : `View ${p.media!.length}`}
-                              </button>
-                            ) : null}
-                          </span>
-                          <span className="cap">{p.text ? p.text.slice(0, 70) : 'No caption'}</span>
-                          <span className="when">{p.time ? new Date(p.time).toLocaleDateString('en-IN') : ''}{p.type === 'REELS' ? ' · Reel' : isVideo ? ' · Video' : many ? ' · Carousel' : ''}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Field>
-            </>
-          )}
-
-          <details className="adv">
-            <summary>Advanced · tracking</summary>
-            <TrackingFields form={form} setAd={setAd} hint="Added to the ad's link." />
-          </details>
-
-          {preview ? <NormalPreview form={form} /> : null}
-          {playing?.media?.length ? <MediaModal media={playing.media} caption={playing.text} onClose={() => setPlaying(null)} /> : null}
         </>
       )}
+
+      <details className="adv">
+        <summary>Advanced · tracking</summary>
+        <TrackingFields form={form} setAd={setAd} hint="Added to the ad's link." />
+      </details>
+
+      {playing?.media?.length ? <MediaModal media={playing.media} caption={playing.text} onClose={() => setPlaying(null)} /> : null}
     </div>
   );
 }

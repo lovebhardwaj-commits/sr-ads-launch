@@ -2,7 +2,7 @@
 import { ArrowLeft, ArrowRight, Check, ImageIcon, LayoutGrid, Newspaper } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { apiGet } from '@/lib/client-api';
-import { CATALOG_AD_TEXT, buildContext, defaultForm, validateAd } from '@/lib/form';
+import { CATALOG_AD_TEXT, buildContext, validateAd } from '@/lib/form';
 import { currencySymbol, goalsFor, objectiveLabel } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
 import type { AdAccount, FormState, LaunchResult, Mode } from '@/lib/types';
@@ -15,7 +15,7 @@ import CatalogPanel from './CatalogPanel';
 import DestinationTree, { adsetBudget, type Destination } from './DestinationTree';
 import LaunchForm, { type ProductSet } from './LaunchForm';
 import { adsetFit, budgetText } from './Pickers';
-import { ReviewPanel } from './ReviewModal';
+import { ReviewPanel } from './ReviewPanel';
 import StandardAdSection from './StandardAdSection';
 
 type Step = 'AD' | 'DEST' | 'SETTINGS' | 'REVIEW';
@@ -29,23 +29,18 @@ const AD_TYPES: { key: AdType; title: string; text: string; icon: ReactNode }[] 
 ];
 
 /**
- * "Start with an Ad" workspace: a sticky step bar on top (back icon, steps, continue), one step at a time in
- * the editor, the live preview and "Runs in" summary on the right, and an action bar that says what's blocking.
- * Nothing is stored in the browser. `catalogOnly` (Catalog Ads > Create ad) offers catalog ads only.
+ * "Start with an Ad" workspace: a step rail on the left, one step at a time in the middle, the live
+ * preview and destination summary on the right, and an action bar that says what's blocking.
  */
-export default function AdFirstWorkspace({ account, form, setForm, onDone, onExit, repeatOf, catalogOnly = false, exitLabel = 'All launch options' }: {
+export default function AdFirstWorkspace({ account, form, setForm, onDone, repeatOf, catalogOnly = false }: {
   account: AdAccount;
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
-  onDone: (r: LaunchResult, mode: Mode) => void;
-  /** Leave the workspace from the first step (Launch: back to all launch options). Without it, the first step has no back button. */
-  onExit?: () => void;
-  /** Reusing the ad just launched: start on the Campaign & ad set step; name of the ad set it went into */
+  onDone: (r: LaunchResult) => void;
+  /** Reusing the ad just launched: start on Destination; name of the ad set it went into */
   repeatOf?: string;
   /** Catalog Ads > Create ad: catalog ads only (no image/video or existing post) */
   catalogOnly?: boolean;
-  /** Tooltip of the back icon on the first step */
-  exitLabel?: string;
 }) {
   const [step, setStep] = useState<Step>(repeatOf ? 'DEST' : 'AD');
   // An ad that arrives with content (repeat, or kept across an ad account switch) keeps its type.
@@ -78,12 +73,6 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
     el.addEventListener('scroll', queue, { passive: true });
     return () => { if (raf) cancelAnimationFrame(raf); ro.disconnect(); window.removeEventListener('scroll', queue); window.removeEventListener('resize', queue); el.removeEventListener('scroll', queue); };
   }, []);
-
-  const startFresh = () => {
-    const f = defaultForm(catalogOnly);
-    setForm({ ...f, campaign: { ...f.campaign, catalogEnabled: catalogOnly }, ad: { ...f.ad, adFirst: true } });
-    setType(catalogOnly ? 'CATALOG' : null); setDest(null); setStep('AD');
-  };
 
   const isCatalog = form.ad.kind === 'CATALOG';
   const fit = { isCatalog, catalogId: form.campaign.catalogId };
@@ -161,7 +150,6 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
   const setCount = productSets.data?.find((x) => x.id === form.adset.productSetId)?.product_count;
   const setAd = (p: Partial<FormState['ad']>) => setForm((f) => ({ ...f, ad: { ...f.ad, ...p } }));
   const mode: Mode = dest?.kind === 'NEW_CAMPAIGN' ? 'NEW' : dest?.kind === 'NEW_ADSET' ? 'EXISTING' : 'AD_ONLY';
-  const finish = (r: LaunchResult) => onDone(r, mode);
 
   // The step bar names the steps only; the names of the ad, campaign and ad set live in the "Runs in" card.
   const STEPS: { key: Step; title: string; sub: string }[] = [
@@ -197,10 +185,10 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
 
   return (
     <div className="ws">
-      {/* Step bar: back icon, the four steps, continue */}
+      {/* Step bar: back, the four steps, continue */}
       <nav className="ws-bar" aria-label="Steps">
-        {prev || onExit ? (
-          <button type="button" className="icon-btn ws-back" onClick={() => (prev ? go(prev) : onExit?.())} aria-label={prev ? 'Back' : exitLabel} title={prev ? 'Back' : exitLabel}>
+        {prev ? (
+          <button type="button" className="icon-btn ws-back" onClick={() => go(prev)} aria-label="Back" title="Back">
             <ArrowLeft size={16} />
           </button>
         ) : null}
@@ -266,12 +254,12 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
                   onPixel={setPixel}
                 />
                 <SectionTitle>Ad details</SectionTitle>
-                <AdSection form={form} setAd={setAd} productSetId={form.adset.productSetId} preview={false} />
+                <AdSection form={form} setAd={setAd} />
               </>
             ) : type ? (
               <>
                 <SectionTitle>Ad details</SectionTitle>
-                <StandardAdSection key={type} form={form} setAd={setAd} accountId={account.id} allowSkip={false} preview={false} hideSetup />
+                <StandardAdSection key={type} form={form} setAd={setAd} accountId={account.id} />
                 <SectionTitle>Tracking</SectionTitle>
                 <div className="card">
                   <Field label="Dataset (pixel)" hint={form.adset.pixelId ? 'Website events from this ad (purchases, add to cart) are tracked with this dataset.' : 'Recommended: without it, Ads Manager won\u2019t track website events for this ad.'}>
@@ -300,14 +288,11 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
             />
             <LaunchForm
               key={dest.kind === 'NEW_ADSET' ? `ws-adset-${dest.campaign.id}` : 'ws-campaign'}
-              embedded
               mode={dest.kind === 'NEW_CAMPAIGN' ? 'NEW' : 'EXISTING'}
               account={account}
               form={form}
               setForm={setForm}
               campaign={dest.kind === 'NEW_ADSET' ? dest.campaign : undefined}
-              onStartOver={startFresh}
-              onDone={finish}
               onMissing={setSettingsMissing}
             />
           </>
@@ -318,7 +303,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
             <StructureMap account={account} form={form} dest={dest} />
             <div className="card" style={{ marginTop: 14 }}>
               {dest.kind === 'ADSET' ? (
-                <AdOnlyPanel account={account} form={form} target={dest.adset} productSets={productSets.data || []} onClose={() => go('DEST')} onDone={finish} backLabel="Back to campaign & ad set" title={false} />
+                <AdOnlyPanel account={account} form={form} target={dest.adset} productSets={productSets.data || []} onDone={onDone} />
               ) : (
                 <ReviewPanel
                   mode={mode}
@@ -328,17 +313,14 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
                   campaign={dest.kind === 'NEW_ADSET' ? dest.campaign : undefined}
                   productSets={productSets.data || []}
                   pixels={pixels.data || []}
-                  onClose={() => go('SETTINGS')}
-                  onDone={finish}
-                  backLabel="Back to setup"
-                  title={false}
+                  onDone={onDone}
                 />
               )}
             </div>
           </>
         ) : null}
 
-        {/* Action bar: what's still needed, and continue */}
+        {/* Action bar */}
         {step !== 'REVIEW' ? (
           <div className="sticky-bar ws-foot">
             <span className="sticky-text">
@@ -353,7 +335,7 @@ export default function AdFirstWorkspace({ account, form, setForm, onDone, onExi
         ) : null}
       </div>
 
-      {/* Live preview and the "Runs in" summary */}
+      {/* Live preview and destination summary */}
       <aside className="ws-side" aria-label="Preview" ref={sideRef}>
         <div className="ws-side-inner" ref={sideInner}>
         {type ? <AdPreview form={form} total={isCatalog ? setCount : undefined} /> : <div className="preview"><div className="preview-empty">Pick an ad type to see a preview.</div></div>}
