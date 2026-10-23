@@ -1,52 +1,10 @@
-# Shiprocket Ads — Launch
+# Fastrr Ads Launcher
 
-Launch Meta (Facebook/Instagram) campaigns straight from one screen, pre-filled for Indian D2C.
+Create and launch Meta (Facebook and Instagram) ads from one guided screen, pre-filled for Indian D2C. Two sections: **Catalog Ads** (performance, product sets, create catalog ads) and **Launch** (start with an ad, choose where it runs, launch).
 
-Four flows:
-
-1. **New Campaign + Ad Set** — create a campaign and its first ad set together.
-2. **New Ad Set → Existing Campaign** — add an ad set to a campaign you already have.
-3. **Duplicate an Ad Set** — copy an ad set (and all its ads) into a new or existing campaign.
-4. **New Catalog Campaign** — Advantage+ catalog ads: pick a catalog and product set, retarget or prospect, and build the catalog ad template with a live product preview.
+**How the whole app works, end to end: see [APP_GUIDE.md](./APP_GUIDE.md).**
 
 Built with Next.js 14 (App Router), TypeScript and the Meta Marketing API (Graph API v23.0 by default). Facebook Login is server-side; the long-lived user token is stored in an encrypted, http-only cookie and never reaches the browser.
-
-## Deploy on Vercel
-
-1. Import this repo in Vercel (framework preset: Next.js).
-2. Add the environment variables below in **Settings → Environment Variables**, then redeploy.
-3. In your Meta app (developers.facebook.com):
-   - Add the **Facebook Login** (or Facebook Login for Business) product.
-   - Under Facebook Login → Settings, add `<APP_URL>/api/auth/callback` to **Valid OAuth Redirect URIs** (exactly the same domain as `APP_URL`).
-   - Under App settings → Basic, add your domain to **App domains**.
-   - Request **Advanced access** for the permissions listed below (App Review), or test with users who have a role on the app.
-4. Open the app on the `APP_URL` domain. Preview deployment URLs won't log in.
-
-### Environment variables
-
-| Name | Required | What it is |
-| --- | --- | --- |
-| `FACEBOOK_APP_ID` | Yes | Meta app ID |
-| `FACEBOOK_APP_SECRET` | Yes | Meta app secret (also used for `appsecret_proof` on every Graph call) |
-| `SESSION_SECRET` | Yes | Random 32+ character string to encrypt the session cookie (`openssl rand -base64 32`) |
-| `APP_URL` | Yes | Production URL, no trailing slash, e.g. `https://sr-ads-launch.vercel.app`. The login callback is always `<APP_URL>/api/auth/callback`; open the app on this domain, not on preview URLs |
-| `META_API_VERSION` | No | Graph API version, default `v23.0` |
-| `FACEBOOK_CONFIG_ID` | No | Facebook Login for Business configuration ID. When set, permissions come from the configuration |
-| `FACEBOOK_SCOPES` | No | Comma-separated override of the permissions requested |
-
-If any required value is missing or `APP_URL` isn't a full `https://` address, the login screen says which one and login stays disabled.
-
-### Permissions requested
-
-| Permission | Why |
-| --- | --- |
-| `public_profile`, `email` | Your name and photo |
-| `ads_management` | Create campaigns, ad sets, ads, ad copies |
-| `ads_read` | Read campaigns and ad sets for the pickers |
-| `business_management` | Find catalogs owned by the ad account's business |
-| `catalog_management` | Read catalogs and product sets; link a pixel to a catalog |
-| `pages_show_list`, `pages_read_engagement` | List Pages for the catalog ad identity |
-| `instagram_basic` | Find the Instagram account connected to a Page |
 
 ## Run locally
 
@@ -56,19 +14,46 @@ npm install
 npm run dev                  # http://localhost:3000
 ```
 
-Add `http://localhost:3000/api/auth/callback` to the app's redirect URIs for local login.
+Add `http://localhost:3000/api/auth/callback` to the Meta app's redirect URIs for local login.
 
-## How it's organised
+## Deploy
 
-```
-src/app/api/auth/*          Facebook OAuth (login → callback → long-lived token → encrypted cookie)
-src/app/api/meta/[action]   Server proxy to the Graph API (lists, search, catalog health, launch)
-src/lib/constants.ts        Objectives, goals, events, bid strategies, attribution, CTAs
-src/lib/form.ts             Form defaults, duplicate pre-fill, flow context, validation
-src/lib/launch.ts           Builds Marketing API payloads and runs the launch sequence
-src/components/*            Launch UI
-```
+1. Import the repo in Vercel (framework preset: Next.js), or build it on your own hosting.
+2. Add the environment variables below, then redeploy.
+3. In your Meta app (developers.facebook.com): add the **Facebook Login** product; add `<APP_URL>/api/auth/callback` to **Valid OAuth Redirect URIs**; add your domain to **App domains**; request **Advanced access** for the permissions below (or test with people who have a role on the app).
 
-### Launch sequence
+On your own hosting, make sure the gateway accepts request bodies of at least 4.5 MB and requests of at least 60 seconds.
 
-Everything is created **paused** first (campaign → ad set → catalog creative + ad, or ad copies for duplicates). If you chose *Active*, the app switches everything on only after every step succeeded, so a failed launch never spends money. If a step fails, the review dialog shows Facebook's own error and which objects were already created.
+### Environment variables
+
+| Name | Required | What it is |
+| --- | --- | --- |
+| `FACEBOOK_APP_ID` | Yes | Meta app ID |
+| `FACEBOOK_APP_SECRET` | Yes | Meta app secret (also used for `appsecret_proof` on every Graph call) |
+| `SESSION_SECRET` | Yes | Random 32+ character string to encrypt the session cookie (`openssl rand -base64 32`) |
+| `APP_URL` | Yes | The app's address, no trailing slash. The login callback is always `<APP_URL>/api/auth/callback` |
+| `META_API_VERSION` | No | Graph API version, default `v23.0` |
+| `FACEBOOK_CONFIG_ID` | No | Facebook Login for Business configuration ID |
+| `FACEBOOK_SCOPES` | No | Comma-separated override of the permissions requested |
+| `OPENROUTER_API_KEY` | No | Turns on AI-written ad text |
+| `OPENROUTER_MODEL` | No | Default `qwen/qwen3.7-flash` |
+| `OPENROUTER_BASE_URL` | No | Default `https://openrouter.ai/api/v1` |
+| `OPENROUTER_DATA_COLLECTION` | No | `deny` = only providers that do not store prompts |
+| `AI_MAX_VIDEO_SECONDS` | No | Longest video the AI watches by link, default 300 |
+| `AI_VIDEO_COPY` | No | `off` = skip the low-resolution video copy |
+
+### Permissions requested
+
+| Permission | Why |
+| --- | --- |
+| `public_profile`, `email` | Your name and photo |
+| `ads_management` | Create campaigns, ad sets, ads and creatives |
+| `ads_read` | Read campaigns, ad sets and results |
+| `business_management` | Find catalogs and pixels owned by the business |
+| `catalog_management` | Read catalogs and product sets; link a pixel to a catalog |
+| `pages_show_list`, `pages_read_engagement` | List Pages and read posts |
+| `instagram_basic` | Find the Instagram account connected to a Page |
+
+## Launch sequence
+
+Everything is created **paused** first (campaign, ad set, creative, ad). If you chose *Active*, the app switches it all on only after every step worked, so a failed launch never spends money. If a step fails, the review shows Facebook's own error and which objects were already created.
