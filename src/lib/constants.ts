@@ -47,7 +47,6 @@ export interface GoalDef {
   attribution?: boolean;
 }
 
-// Labels follow Meta Ads Manager's performance goal wording.
 const CONVERSIONS: GoalDef = { key: 'CONVERSIONS', label: 'Maximize number of conversions', optimization: 'OFFSITE_CONVERSIONS', pixel: true, destination: 'WEBSITE', attribution: true };
 const VALUE: GoalDef = { key: 'VALUE', label: 'Maximize value of conversions', optimization: 'VALUE', pixel: true, fixedEvent: 'PURCHASE', destination: 'WEBSITE', attribution: true };
 const LANDING_PAGE_VIEWS: GoalDef = { key: 'LANDING_PAGE_VIEWS', label: 'Maximize number of landing page views', optimization: 'LANDING_PAGE_VIEWS', destination: 'WEBSITE' };
@@ -65,7 +64,7 @@ const GOALS: Record<string, GoalDef[]> = {
   OUTCOME_AWARENESS: [REACH, IMPRESSIONS],
 };
 
-/** Catalog ad sets: products come from the catalog; the conversion event is still chosen like normal ad sets. */
+/** Catalog ad sets: products come from the catalog, the pixel comes from the catalog link. */
 const CATALOG_GOALS: GoalDef[] = [
   { ...CONVERSIONS, destination: undefined },
   { ...VALUE, destination: undefined },
@@ -79,11 +78,6 @@ export function goalsFor(objective: string | undefined, catalog: boolean): GoalD
 
 export function goalDef(objective: string | undefined, catalog: boolean, key: string): GoalDef | undefined {
   return goalsFor(objective, catalog).find((g) => g.key === key);
-}
-
-export function goalFromOptimization(objective: string | undefined, catalog: boolean, optimization?: string): string {
-  const list = goalsFor(objective, catalog);
-  return (list.find((g) => g.optimization === optimization) || list[0]).key;
 }
 
 export const CONVERSION_EVENTS: Option[] = [
@@ -113,17 +107,6 @@ export const ATTRIBUTION: (Option & { spec: { event_type: string; window_days: n
   { key: '7C', label: '7-day click only', spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] },
   { key: '1C1V', label: '1-day click or 1-day view', spec: [{ event_type: 'CLICK_THROUGH', window_days: 1 }, { event_type: 'VIEW_THROUGH', window_days: 1 }] },
 ];
-
-export function attributionFromSpec(spec?: { event_type: string; window_days: number }[]): string {
-  if (!spec || !spec.length) return '7C1V';
-  const click = spec.find((s) => s.event_type === 'CLICK_THROUGH')?.window_days;
-  const view = spec.find((s) => s.event_type === 'VIEW_THROUGH')?.window_days;
-  if (click === 7 && view === 1) return '7C1V';
-  if (click === 1 && view === 1) return '1C1V';
-  if (click === 7) return '7C';
-  if (click === 1) return '1C';
-  return '7C1V';
-}
 
 export const PLATFORMS: Option[] = [
   { key: 'facebook', label: 'Facebook' },
