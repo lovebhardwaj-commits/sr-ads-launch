@@ -34,13 +34,12 @@ const OS = [{ key: 'iOS', label: 'iOS' }, { key: 'Android', label: 'Android' }];
 /** Where the ad shows: any device, mobile (optionally iOS or Android only) or desktop. */
 export function Devices({ a, set }: { a: Adset; set: (p: Partial<Adset>) => void }) {
   return (
-    <Field label="Devices" hint={a.devices === 'SOURCE' ? 'Keeps the original ad set’s device targeting (specific devices or OS versions).' : a.devices === 'DESKTOP' ? 'Desktop only. Stories are mobile only.' : undefined}>
+    <Field label="Devices" hint={a.devices === 'DESKTOP' ? 'Desktop only. Stories are mobile only.' : undefined}>
       <Segmented
         value={a.devices}
         onChange={(v) => set({ devices: v, os: v === 'MOBILE' ? a.os : [] })}
         options={[
           { key: 'ALL', label: 'All devices' }, { key: 'MOBILE', label: 'Mobile only' }, { key: 'DESKTOP', label: 'Desktop only' },
-          ...(a.devices === 'SOURCE' ? [{ key: 'SOURCE' as const, label: 'Same as original ad set' }] : []),
         ]}
       />
       {a.devices === 'MOBILE' ? (
@@ -55,7 +54,7 @@ export function Devices({ a, set }: { a: Adset; set: (p: Partial<Adset>) => void
 
 /** One line for the review and the collapsed summary. */
 export function placementSummary(a: Adset): string {
-  const dev = a.devices === 'MOBILE' ? (a.os.length ? `${a.os.join(' & ')} only` : 'Mobile only') : a.devices === 'DESKTOP' ? 'Desktop only' : a.devices === 'SOURCE' ? 'Original device targeting' : '';
+  const dev = a.devices === 'MOBILE' ? (a.os.length ? `${a.os.join(' & ')} only` : 'Mobile only') : a.devices === 'DESKTOP' ? 'Desktop only' : '';
   if (a.placement === 'ADVANTAGE') return ['Advantage+ placements', dev].filter(Boolean).join(' · ');
   const labels = (opts: typeof FB_POSITIONS, keys: string[]) => keys.map((k) => opts.find((o) => o.key === k)?.label || k).join(', ') || 'none';
   const names = a.platforms.map((p) => {

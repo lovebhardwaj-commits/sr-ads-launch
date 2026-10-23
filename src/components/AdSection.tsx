@@ -5,7 +5,6 @@ import { CTAS, PRODUCT_TOKENS } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
 import { CATALOG_AD_TEXT } from '@/lib/form';
 import type { FormState } from '@/lib/types';
-import { CatalogPreview } from './AdPreview';
 import TrackingFields from './TrackingFields';
 import { Field, Loading, SearchSelect, Segmented, Select, TextInput, Toggle } from './ui';
 
@@ -26,13 +25,10 @@ function Tokens({ onInsert }: { onInsert: (t: string) => void }) {
   );
 }
 
-/** Catalog ad form. `preview` renders the live preview below it (when it isn't shown in a side panel). */
-export default function AdSection({ form, setAd, productSetId, preview = true }: {
+/** Catalog ad form: text, format, media and link. (The live preview is in the workspace's side panel.) */
+export default function AdSection({ form, setAd }: {
   form: FormState;
   setAd: (p: Partial<FormState['ad']>) => void;
-  productSetId: string;
-  catalogId?: string;
-  preview?: boolean;
 }) {
   const ad = form.ad;
   const pages = useAsync<Page[]>('pages', () => apiGet('pages'));
@@ -64,7 +60,7 @@ export default function AdSection({ form, setAd, productSetId, preview = true }:
         <TextInput value={ad.name} onChange={(e) => setAd({ name: e.target.value })} placeholder="e.g. Skin care · Retarget · Carousel" />
       </Field>
       <Field label="Facebook Page">
-        {pages.loading ? <Loading text="Loading Pages…" /> : pages.error ? <div className="notice bad">{pages.error}</div> : (
+        {pages.loading ? <Loading /> : pages.error ? <div className="notice bad">{pages.error}</div> : (
           <SearchSelect
             value={ad.pageId}
             onChange={(v) => setAd({ pageId: v })}
@@ -90,7 +86,7 @@ export default function AdSection({ form, setAd, productSetId, preview = true }:
       </Field>
       <Field
         label="Media"
-        hint={ad.media === 'SLIDESHOW' ? 'Each card plays the product\u2019s images from the catalog.' : ad.media === 'VIDEO' ? 'Products with a video in the catalog show it; others show their image.' : 'Each product shows its main catalog image.'}
+        hint={ad.media === 'SLIDESHOW' ? 'Each card plays the product’s images from the catalog.' : ad.media === 'VIDEO' ? 'Products with a video in the catalog show it; others show their image.' : 'Each product shows its main catalog image.'}
       >
         <Segmented
           value={ad.media}
@@ -126,7 +122,7 @@ export default function AdSection({ form, setAd, productSetId, preview = true }:
       <Field hint="Each product opens its own page from the catalog.">
         <Segmented value={ad.destination} onChange={(v) => setAd({ destination: v })} options={[{ key: 'WEBSITE', label: 'Website' }, { key: 'APP_WEB', label: 'App, website as backup' }]} />
       </Field>
-      <Field label="See more URL" hint={page && !linkEdited ? (pageWebsite(page) ? 'From the Page\u2019s website. Used by the last card and the See more link.' : 'This Page has no website listed; enter one.') : 'Used by the last card and the See more link.'}>
+      <Field label="See more URL" hint={page && !linkEdited ? (pageWebsite(page) ? 'From the Page’s website. Used by the last card and the See more link.' : 'This Page has no website listed; enter one.') : 'Used by the last card and the See more link.'}>
         <TextInput value={ad.link} onChange={(e) => { setLinkEdited(true); setAd({ link: e.target.value }); }} placeholder="https://yourstore.com" />
       </Field>
 
@@ -140,7 +136,6 @@ export default function AdSection({ form, setAd, productSetId, preview = true }:
         <TrackingFields form={form} setAd={setAd} hint="Added to every product link." />
       </details>
 
-      {preview ? <CatalogPreview form={form} productSetId={productSetId} /> : null}
     </div>
   );
 }

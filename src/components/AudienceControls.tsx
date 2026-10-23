@@ -121,7 +121,7 @@ function band(n: number): { key: 'narrow' | 'moderate' | 'broad'; label: string 
 }
 
 /** Meta's estimate of how many people the audience reaches, so a too-narrow or too-broad one shows before launch. */
-export function AudienceEstimate({ accountId, form, ctx, sourceTargeting }: { accountId: string; form: FormState; ctx: FlowContext; sourceTargeting?: any }) {
+export function AudienceEstimate({ accountId, form, ctx }: { accountId: string; form: FormState; ctx: FlowContext }) {
   const a = form.adset;
   // Only what changes the audience: typing elsewhere in the form doesn't ask Meta again.
   const sig = JSON.stringify([a.audienceType, a.savedAudienceId, a.locations.map((l) => `${l.type}-${l.key}`), a.ageMin, a.ageMax, a.gender, a.interests.map((i) => i.id),
@@ -129,7 +129,7 @@ export function AudienceEstimate({ accountId, form, ctx, sourceTargeting }: { ac
   const [asked, setAsked] = useState('');
   useEffect(() => { const t = setTimeout(() => setAsked(sig), 700); return () => clearTimeout(t); }, [sig]);
   const res = useAsync<Estimate>(asked ? `audience-estimate-${accountId}-${asked}` : null, () => apiPost('audience-estimate', {
-    accountId, ctx, sourceTargeting,
+    accountId, ctx,
     form: { ...form, ad: { ...form.ad, postMedia: [], imageUrl: '', videoUrl: '', postPreview: '' } },
   }));
   const retarget = ctx.isCatalog && a.catalogAudience !== 'BROAD';

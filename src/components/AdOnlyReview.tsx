@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { apiPost, errorText } from '@/lib/client-api';
 import { apiGet } from '@/lib/client-api';
 import { CTAS, buildUrlTags } from '@/lib/constants';
@@ -11,27 +11,12 @@ import ProductStrip from './ProductStrip';
 import ReviewGroups, { type ReviewRow } from './ReviewGroups';
 import { Segmented } from './ui';
 
-/** Reverse journey: review and add the ad to an existing ad set. */
-type Props = { account: AdAccount; form: FormState; target: AdsetLite; onClose: () => void; onDone: (r: LaunchResult) => void; productSets?: ProductSet[] };
+type Props = { account: AdAccount; form: FormState; target: AdsetLite; onDone: (r: LaunchResult) => void; productSets?: ProductSet[] };
 
 const day = (s: string) => new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
-export default function AdOnlyReview(props: Props) {
-  const { onClose } = props;
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [onClose]);
-  return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="adonly-title" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal"><AdOnlyPanel {...props} /></div>
-    </div>
-  );
-}
-
-/** Review and add the ad to an existing ad set; works in a dialog or on a page. */
-export function AdOnlyPanel({ account, form, target, onClose, onDone, productSets, backLabel = 'Back', title = true }: Props & { backLabel?: string; title?: boolean }) {
+/** The Review step when the ad joins an existing ad set: what is added, how it starts, and the button. */
+export function AdOnlyPanel({ account, form, target, onDone, productSets }: Props) {
   const [status, setStatus] = useState<'PAUSED' | 'ACTIVE'>('PAUSED');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<LaunchResult | null>(null);
@@ -41,17 +26,15 @@ export function AdOnlyPanel({ account, form, target, onClose, onDone, productSet
   const ad = form.ad;
   const isCatalog = ad.kind === 'CATALOG';
   const targetSet = target.promoted_object?.product_set_id;
-  // On a page the structure map above already names the campaign, ad set and ad; the dialog has no such map.
-  const page = title === false;
+  // The structure map above the review already names the campaign, ad set and ad, so the rows don't repeat them.
 
   const cta = CTAS.find((x) => x.key === ad.cta)?.label;
-  const facts = adsetFacts(target, account).filter(([k]) => !(page && (k === 'Campaign' || k === 'Ad set')));
-  const adsetRows: ReviewRow[] = [...(page ? [] : [['Ad account', account.name] as ReviewRow]), ...facts];
+  const facts = adsetFacts(target, account).filter(([k]) => k !== 'Campaign' && k !== 'Ad set');
+  const adsetRows: ReviewRow[] = facts;
 
   const setId = targetSet || form.adset.productSetId;
   const set = productSets?.find((s) => s.id === setId);
   const adRows: ReviewRow[] = [];
-  if (!page) adRows.push(['Ad name', ad.name || `${target.name} - ${isCatalog ? 'Catalog ad' : 'Ad'}`]);
   adRows.push(['Format', isCatalog
     ? `${ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} from catalog, “${cta}” button`
     : ad.kind === 'POST' ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post` : `New ${ad.videoId ? 'video' : 'image'} ad${ad.imageName ? ` (${ad.imageName})` : ''}, “${cta}” button`]);
@@ -89,7 +72,6 @@ export function AdOnlyPanel({ account, form, target, onClose, onDone, productSet
 
   return (
     <>
-        {title ? <><h2 id="adonly-title">Review &amp; Launch</h2><p className="note">Your ad is added to the existing ad set. The ad set&apos;s budget, audience and schedule stay as they are.</p></> : null}
         <ReviewGroups groups={[{ title: 'Ad set it joins', rows: adsetRows }, { title: 'Your ad', rows: adRows }, { title: 'Tracking', rows: trackRows }]} />
         {isCatalog ? <div style={{ marginTop: 14 }}><ProductStrip setId={setId} label="Products the ad can show" total={set?.product_count} /></div> : null}
         {heads.length || pixelMismatch || !trackPixel ? (
@@ -115,7 +97,6 @@ export function AdOnlyPanel({ account, form, target, onClose, onDone, productSet
         ) : null}
         {error ? <div className="notice bad" style={{ marginTop: 16 }}>{error}</div> : null}
         <div className="modal-actions">
-          {!page ? <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>{backLabel}</button> : null}
           <button type="button" className="btn-primary" onClick={go} disabled={busy || (status === 'ACTIVE' && !understood)}>
             {busy ? <><span className="spinner" style={{ borderTopColor: '#fff' }} /> Launching…</> : status === 'ACTIVE' ? 'Add ad and start spending' : 'Add ad paused'}
           </button>
