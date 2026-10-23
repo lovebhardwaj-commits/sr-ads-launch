@@ -1,21 +1,17 @@
 'use client';
-import { ChevronLeft } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '@/lib/client-api';
 import {
   AGES, ATTRIBUTION, BID_STRATEGIES, CATALOG_EVENTS, CONVERSION_EVENTS, OBJECTIVES, PLATFORMS, RETARGET_PRESETS,
-  currencySymbol, goalsFor, objectiveLabel,
+  currencySymbol, goalsFor,
 } from '@/lib/constants';
 import { buildContext, validate } from '@/lib/form';
 import { useAsync } from '@/lib/hooks';
-import type { AdAccount, AdsetLite, CampaignLite, FormState, GeoItem, InterestItem, LaunchResult, LocaleItem, Mode } from '@/lib/types';
+import type { AdAccount, CampaignLite, FormState, GeoItem, InterestItem, LocaleItem, Mode } from '@/lib/types';
 import { AudienceEstimate, CustomAudiences, InterestSuggestions, describeTargeting } from './AudienceControls';
-import AdSection from './AdSection';
 import BudgetField from './BudgetField';
 import CatalogPanel from './CatalogPanel';
 import { Devices, Positions, placementSummary } from './PlacementControls';
-import ReviewModal from './ReviewModal';
-import StandardAdSection from './StandardAdSection';
 import { CheckPills, Field, Loading, Segmented, Select, TagSearch, TextInput, Toggle } from './ui';
 
 export interface ProductSet { id: string; name: string; product_count?: number; products?: { data?: { id: string; image_url?: string }[] } }
@@ -23,35 +19,26 @@ export interface ProductSet { id: string; name: string; product_count?: number; 
 const RETARGET_DAYS = [3, 7, 14, 30, 60, 90, 180].map((d) => ({ key: String(d), label: `${d} days` }));
 
 /** In the workspace, rarely changed settings sit in a collapsed section whose title shows their current values. */
-function Adv({ on, summary, children }: { on: boolean; summary: string; children: React.ReactNode }) {
-  if (!on) return <>{children}</>;
+function Adv({ summary, children }: { summary: string; children: React.ReactNode }) {
   return <details className="adv"><summary>Advanced · {summary}</summary>{children}</details>;
 }
 
-export default function LaunchForm({ mode, account, form, setForm, campaign, source, onStartOver, onEditAd, onDone, embedded = false, summary, onMissing }: {
+/** The Setup step of "Start with an Ad": budget, audience, placements and schedule for a new campaign or ad set. */
+export default function LaunchForm({ mode, account, form, setForm, campaign, onMissing }: {
   mode: Mode;
   account: AdAccount;
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   campaign?: CampaignLite;
-  source?: AdsetLite;
-  onStartOver: () => void;
-  /** Reverse journey: go back to the ad built first */
-  onEditAd?: () => void;
-  onDone: (r: LaunchResult) => void;
-  /** Rendered inside "Start with an Ad": no Start over, no Ad section (the ad is shown above), sticky action bar */
-  embedded?: boolean;
-  summary?: React.ReactNode;
-  /** Host shows its own action bar and review: receive what's still needed, render no bar or dialog here */
-  onMissing?: (missing: { key: string; label: string }[]) => void;
+  /** The workspace shows the action bar and the review: it is told what is still needed */
+  onMissing: (missing: { key: string; label: string }[]) => void;
 }) {
-  const ctx = buildContext(mode, form, campaign, source);
+  const ctx = buildContext(mode, form, campaign);
   const c = form.campaign;
   const a = form.adset;
   const b = form.budget;
   const sym = currencySymbol(account.currency);
   const [catalogReady, setCatalogReady] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
 
   const up = <K extends keyof FormState>(k: K, patch: Partial<FormState[K]>) =>
     setForm((f) => ({ ...f, [k]: { ...f[k], ...patch } }));
@@ -102,7 +89,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
 
   // Report only when the list itself changes (the array is rebuilt every render).
   const missingKey = missing.map((m) => m.key).join('|');
-  useEffect(() => { onMissing?.(missing); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [missingKey]);
+  useEffect(() => { onMissing(missing); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [missingKey]);
 
   // Budget can live at either level; an amount at one level disables the other.
   const campaignBudgetReason = b.level === 'ADSET' ? 'The budget is set at ad set level. Switch the budget level above to use one budget for the whole campaign.' : undefined;
@@ -161,7 +148,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
     <CustomAudiences accountId={account.id} include={a.customAudiences} exclude={a.excludedAudiences} includeHint={hint}
       onInclude={(v) => up('adset', { customAudiences: v })} onExclude={(v) => up('adset', { excludedAudiences: v })} />
   );
-  const estimate = !retarget ? <AudienceEstimate accountId={account.id} form={form} ctx={ctx} sourceTargeting={source?.targeting} /> : null;
+  const estimate = !retarget ? <AudienceEstimate accountId={account.id} form={form} ctx={ctx} /> : null;
   // Advantage detailed targeting: Original audience only. For some goals Meta applies it by itself.
   const expansion = a.interests.length || a.audienceType === 'SAVED' ? (
     goal.key === 'VALUE' || goal.key === 'LANDING_PAGE_VIEWS'
@@ -176,17 +163,6 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
 
   return (
     <>
-      {!embedded ? <button type="button" className="back" onClick={onStartOver}><ChevronLeft size={13} /> Start over</button> : null}
-
-      {!embedded && !ctx.needsCampaign && campaign ? (
-        <p className="note">
-          Attaching to existing campaign: <span className="strong">{campaign.name}</span> ({objectiveLabel(campaign.objective)}{ctx.isCatalog ? ', catalog' : ''})
-        </p>
-      ) : null}
-      {source ? (
-        <p className="note">Duplicating <span className="strong">{source.name}</span>. Its {source.ads?.summary?.total_count ?? 0} ads are copied into the new ad set with the same creative.</p>
-      ) : null}
-
       {/* ── Campaign ── */}
       {ctx.needsCampaign ? (
         <>
@@ -195,24 +171,24 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             <Field label="Campaign name">
               <TextInput value={c.name} onChange={(e) => up('campaign', { name: e.target.value })} placeholder={c.catalogEnabled ? 'e.g. D2C-Catalog-Retargeting-Oct' : 'e.g. D2C-Sales-Prospecting-Oct'} />
             </Field>
-            <Field label="Campaign objective" hint={mode === 'DUP_NEW' ? 'Matches the original ad set so its ads can be copied.' : undefined}>
+            <Field label="Campaign objective">
               <Select
                 value={c.objective}
-                disabled={mode === 'DUP_NEW' || (form.ad.adFirst && c.catalogEnabled)}
+                disabled={c.catalogEnabled}
                 onChange={(v) => up('campaign', { objective: v, catalogEnabled: v === 'OUTCOME_SALES' ? c.catalogEnabled : false })}
                 options={OBJECTIVES}
               />
             </Field>
             {c.objective === 'OUTCOME_SALES' ? (
-              <Field hint={form.ad.adFirst ? 'Set by your ad.' : mode !== 'NEW' ? 'Set by the ad set being duplicated.' : c.catalogEnabled ? 'Ads pick products from your catalog for each shopper.' : 'Turn on to show products from your catalog instead of uploaded creatives.'}>
+              <Field hint="Set by your ad.">
                 <Toggle
                   checked={c.catalogEnabled}
-                  onChange={(v) => { if (mode === 'NEW' && !form.ad.adFirst) up('campaign', { catalogEnabled: v }); }}
+                  onChange={() => undefined}
                   label={<span className="strong">Catalog</span>}
                 />
               </Field>
             ) : null}
-            <Adv on={embedded} summary={`${c.setup === 'ADVANTAGE_PLUS' ? 'Advantage+ Shopping' : 'Manual setup'} · ${bid.label}`}>
+            <Adv summary={`${c.setup === 'ADVANTAGE_PLUS' ? 'Advantage+ Shopping' : 'Manual setup'} · ${bid.label}`}>
             <Field label="Campaign setup" hint={advantagePlus ? 'Advantage+ uses a campaign budget, Advantage+ Audience and Advantage+ Placements; those choices are locked below.' : undefined}>
               <Segmented value={c.setup} onChange={(v) => up('campaign', { setup: v })} options={[{ key: 'MANUAL', label: 'Manual' }, { key: 'ADVANTAGE_PLUS', label: 'Advantage+ Shopping' }]} />
             </Field>
@@ -257,7 +233,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
           <CatalogPanel
             account={account}
             catalogId={ctx.catalogId}
-            locked={ctx.catalogLocked}
+            locked
             onCatalog={(id) => { up('campaign', { catalogId: id }); up('adset', { productSetId: '', crossSellSourceSetId: '' }); }}
             productSets={productSets.data || []}
             productSetsLoading={productSets.loading}
@@ -314,9 +290,8 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
               <Select value={a.attribution} onChange={(v) => up('adset', { attribution: v })} options={ATTRIBUTION} />
             </Field>
           ) : null;
-          if (!embedded) return <>{location}{goalField}{dataset}{event}{attribution}</>;
           const summary = [goal.pixel ? CONVERSION_EVENTS.find((e) => e.key === (goal.fixedEvent || a.event))?.label : '', goal.attribution ? ATTRIBUTION.find((x) => x.key === a.attribution)?.label : ''].filter(Boolean).join(' · ') || 'Website';
-          return <>{dataset}{goalField}<Adv on summary={summary}>{location}{event}{attribution}</Adv></>;
+          return <>{dataset}{goalField}<Adv summary={summary}>{location}{event}{attribution}</Adv></>;
         })()}
 
         {/* Budget & schedule */}
@@ -394,19 +369,14 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
         {!retarget ? (
           <Field>
             <Segmented
-              value={a.audienceType === 'ADVANTAGE' ? 'ADVANTAGE' : a.audienceType === 'SOURCE' ? 'SOURCE' : 'ORIGINAL'}
-              onChange={(v) => up('adset', v === 'ADVANTAGE' ? { audienceType: 'ADVANTAGE', ageMin: Math.min(a.ageMin, 25) } : v === 'SOURCE' ? { audienceType: 'SOURCE' } : { audienceType: a.savedAudienceId ? 'SAVED' : 'INTEREST' })}
+              value={a.audienceType === 'ADVANTAGE' ? 'ADVANTAGE' : 'ORIGINAL'}
+              onChange={(v) => up('adset', v === 'ADVANTAGE' ? { audienceType: 'ADVANTAGE', ageMin: Math.min(a.ageMin, 25) } : { audienceType: a.savedAudienceId ? 'SAVED' : 'INTEREST' })}
               options={[
                 { key: 'ADVANTAGE', label: 'Advantage+ audience' },
                 { key: 'ORIGINAL', label: 'Original audience options', disabled: advantagePlus, title: advantagePlus ? 'Not available with Advantage+ Shopping' : undefined },
-                ...(source && a.audienceType === 'SOURCE' ? [{ key: 'SOURCE', label: 'Same as original ad set' }] : []),
               ]}
             />
           </Field>
-        ) : null}
-
-        {!retarget && a.audienceType === 'SOURCE' ? (
-          <p className="hint">Keeps the original ad set&apos;s custom audiences, lookalikes and exclusions. Location, age, gender and language below still apply.</p>
         ) : null}
 
         {!retarget && (a.audienceType === 'INTEREST' || a.audienceType === 'SAVED') ? (
@@ -439,7 +409,6 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             <Field label="Minimum age" hint="Meta won't show ads to anyone younger. Advantage+ audience allows up to 25.">
               <Select value={String(Math.min(a.ageMin, 25))} onChange={(v) => up('adset', { ageMin: Number(v) })} options={AGES.filter((n) => n <= 25).map((n) => ({ key: String(n), label: String(n) }))} />
             </Field>
-            {!embedded ? <Field label="Languages">{languageField}</Field> : null}
             <div className="label strong" style={{ marginTop: 18 }}>Audience suggestion (optional)</div>
             <p className="hint" style={{ marginTop: 0 }}>Meta starts with these, then looks beyond them when it finds people likely to convert.</p>
             <div className="row field">
@@ -458,7 +427,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
           </>
         ) : null}
 
-        {retarget || a.audienceType === 'INTEREST' || a.audienceType === 'SOURCE' ? (
+        {retarget || a.audienceType === 'INTEREST' ? (
           <>
             {!retarget && a.audienceType === 'INTEREST' ? customAudienceFields('Customer lists, website visitors and lookalikes to reach.') : null}
             <Field label="Locations">{locationField}</Field>
@@ -474,8 +443,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
             {!retarget && a.audienceType === 'INTEREST' ? <Field label="Detailed targeting" hint="Include people who match any of these. Leave empty for broad.">{interestField}</Field> : null}
             {!retarget && a.audienceType === 'INTEREST' ? <InterestSuggestions interests={a.interests} onAdd={addInterest} /> : null}
             {!retarget && a.audienceType === 'INTEREST' ? expansion : null}
-            {!embedded ? <Field label="Languages">{languageField}</Field> : null}
-            {!retarget && (a.audienceType === 'INTEREST' || a.audienceType === 'SOURCE') ? estimate : null}
+            {!retarget && a.audienceType === 'INTEREST' ? estimate : null}
           </>
         ) : null}
 
@@ -483,7 +451,7 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
         {(() => {
           const placements = (
             <>
-              <Field label={embedded ? 'Placements' : undefined}>
+              <Field label="Placements">
                 <Segmented
                   value={a.placement}
                   onChange={(v) => up('adset', { placement: v })}
@@ -504,110 +472,10 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, sou
               {a.placement === 'MANUAL' || a.devices !== 'ALL' ? <Devices a={a} set={(p) => up('adset', p)} /> : null}
             </>
           );
-          if (!embedded) return <><div className="subhead">Placements</div>{placements}</>;
           const summary = `${placementSummary(a)} · ${a.locales.length ? a.locales.map((l) => l.name).join(', ') : 'All languages'}`;
-          return <Adv on summary={summary}>{placements}<Field label="Languages">{languageField}</Field></Adv>;
+          return <Adv summary={summary}>{placements}<Field label="Languages">{languageField}</Field></Adv>;
         })()}
       </div>
-
-      {/* ── Ad ── */}
-      {!embedded ? <h2 className="section-title">Ad</h2> : null}
-      {form.ad.adFirst && !embedded ? (
-        <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-            {form.ad.imageUrl || form.ad.postPreview ? <img src={form.ad.imageUrl || form.ad.postPreview} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 8 }} /> : null}
-            <div style={{ minWidth: 0 }}>
-              <div className="strong">{form.ad.name || 'Your ad'}</div>
-              <div className="hint" style={{ marginTop: 2 }}>
-                {ctx.isCatalog || ctx.adLevelCatalog
-                  ? `Catalog ad · ${form.ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} · ${ctx.adLevelCatalog ? `products from ${setOptions.find((s) => s.key === a.productSetId)?.label || 'the chosen product set'}` : 'products from the product set above'}`
-                  : form.ad.kind === 'POST' ? `Existing ${form.ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post` : `Image ad${form.ad.imageName ? ` · ${form.ad.imageName}` : ''}`}
-              </div>
-            </div>
-          </div>
-          {onEditAd ? <button type="button" className="btn-ghost" onClick={onEditAd}>Edit ad</button> : null}
-        </div>
-      ) : null}
-      {!form.ad.adFirst && ctx.isDup ? (
-        <div className="card" style={{ marginBottom: 14 }}>
-          <Field>
-            <Toggle
-              checked={form.ad.copyOriginal}
-              onChange={(v) => up('ad', { copyOriginal: v })}
-              label={<>Copy the original ad set&apos;s <span className="strong">{source?.ads?.summary?.total_count ?? 0} {(source?.ads?.summary?.total_count ?? 0) === 1 ? 'ad' : 'ads'}</span>, with the same creative</>}
-            />
-          </Field>
-          <Field>
-            <Toggle checked={form.ad.addNew} onChange={(v) => up('ad', { addNew: v })} label={ctx.isCatalog ? 'Also add a new catalog ad' : 'Also add a new ad'} />
-          </Field>
-        </div>
-      ) : null}
-      {!form.ad.adFirst && (!ctx.isDup || form.ad.addNew) ? (
-        <>
-          {!ctx.needsCampaign && !ctx.isDup ? (
-            <p className="note">
-              {ctx.isCatalog
-                ? 'This campaign uses a catalog, so you’ll create a catalog ad: Meta picks products from the product set for each shopper.'
-                : 'This is a normal campaign, so you’ll create a normal ad: upload an image or use an existing post.'}
-            </p>
-          ) : null}
-          {ctx.isCatalog ? (
-            <AdSection form={form} setAd={(p) => up('ad', p)} productSetId={a.productSetId} catalogId={ctx.catalogId} />
-          ) : (
-            <>
-              <StandardAdSection form={form} setAd={(p) => up('ad', p)} accountId={account.id} allowSkip={!ctx.isDup} allowCatalog={ctx.objective === 'OUTCOME_SALES'} />
-              {ctx.adLevelCatalog ? (
-                <>
-                  <h2 className="section-title">Catalog for this ad</h2>
-                  <CatalogPanel
-                    account={account}
-                    catalogId={c.catalogId}
-                    locked={false}
-                    onCatalog={(id) => { up('campaign', { catalogId: id }); up('adset', { productSetId: '' }); }}
-                    productSets={productSets.data || []}
-                    productSetsLoading={productSets.loading}
-                    productSetsError={productSets.error}
-                    productSetId={a.productSetId}
-                    onProductSet={(id) => up('adset', { productSetId: id })}
-                    pixelId=""
-                    onReady={() => undefined}
-                    showHealth={false}
-                  />
-                  <h2 className="section-title">Catalog ad</h2>
-                  <AdSection key="adlevel" form={form} setAd={(p) => up('ad', p)} productSetId={a.productSetId} catalogId={c.catalogId} />
-                </>
-              ) : null}
-            </>
-          )}
-        </>
-      ) : null}
-
-      {onMissing ? null : embedded ? (
-        <div className="sticky-bar">
-          <span className="sticky-text">{summary}{missing.length ? <span className="missing" style={{ display: 'block' }}>Still needed: {missing.map((m) => m.label).join(', ')}</span> : null}</span>
-          <button type="button" className="btn-primary" disabled={missing.length > 0} onClick={() => setReviewing(true)}>Review &amp; Launch</button>
-        </div>
-      ) : (
-        <div className="launch-bar">
-          <button type="button" className="btn-primary" disabled={missing.length > 0} onClick={() => setReviewing(true)}>Review &amp; Launch</button>
-          {missing.length ? <span className="missing">Still needed: {missing.map((m) => m.label).join(', ')}</span> : null}
-        </div>
-      )}
-
-      {reviewing ? (
-        <ReviewModal
-          mode={mode}
-          account={account}
-          form={form}
-          ctx={ctx}
-          campaign={campaign}
-          source={source}
-          productSets={productSets.data || []}
-          pixels={pixels.data || []}
-          onClose={() => setReviewing(false)}
-          onDone={onDone}
-        />
-      ) : null}
     </>
   );
 }

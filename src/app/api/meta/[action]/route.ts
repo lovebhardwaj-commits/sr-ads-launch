@@ -294,7 +294,7 @@ async function handlePost(action: string, body: any, token: string): Promise<any
       if (ctx.isCatalog && form.adset.catalogAudience !== 'BROAD') return { available: false, reason: 'Retargeting audiences have no size estimate.' };
       let saved: any;
       if (form.adset.audienceType === 'SAVED' && form.adset.savedAudienceId) saved = (await graph.get<{ targeting: any }>(form.adset.savedAudienceId, token, { fields: 'targeting' })).targeting;
-      const spec = buildTargeting(form, ctx, body.sourceTargeting, saved);
+      const spec = buildTargeting(form, ctx, saved);
       if (!spec.geo_locations || !Object.keys(spec.geo_locations).length) return { available: false, reason: 'Add a location to see the estimate.' };
       // The estimate takes a plain spec: Advantage+ settings are removed and its age range becomes a plain one.
       delete spec.targeting_automation; delete spec.targeting_optimization; delete spec.targeting_relaxation_types;
