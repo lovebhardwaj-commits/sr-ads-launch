@@ -62,11 +62,24 @@ export default function StandardAdSection({ form, setAd, accountId }: {
   const [uploadError, setUploadError] = useState('');
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState<Post | null>(null);
+  const [postQuery, setPostQuery] = useState('');
+  const [copiedId, setCopiedId] = useState('');
 
   const posts = useAsync<Post[]>(
     ad.kind === 'POST' && ad.pageId && (ad.postSource === 'FACEBOOK' || ig?.id) ? `posts-${ad.pageId}-${ad.postSource}` : null,
     () => apiGet('posts', { page: ad.pageId, source: ad.postSource, ig: ig?.id }),
   );
+
+  // Find a post by its ID (the same one Ads Manager shows) or by words in its caption.
+  const q = postQuery.trim().toLowerCase();
+  const shownPosts = (posts.data || []).filter((p) => !q || p.id.toLowerCase().includes(q) || (p.text || '').toLowerCase().includes(q));
+  const copyId = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((c) => (c === id ? '' : c)), 1500);
+    } catch { /* clipboard blocked: the ID is still on screen to select */ }
+  };
 
   // Product tokens only work in catalog ads; clear them if the text came from a catalog setup.
   useEffect(() => {
@@ -257,30 +270,39 @@ export default function StandardAdSection({ form, setAd, accountId }: {
               options={[{ key: 'FACEBOOK', label: 'Facebook Page' }, { key: 'INSTAGRAM', label: 'Instagram account', disabled: !ig, title: !ig ? 'This Page has no connected Instagram account' : undefined }]}
             />
           </Field>
-          <Field label="Select post" hint="The post keeps its own text, media and engagement. Add the button and link below.">
+          <Field label="Select post" hint="The post keeps its own text, media and engagement. Add the button and link below. Each post shows its ID, so you can find the same post in Ads Manager.">
             {!ad.pageId ? <div className="note">Select a Page first.</div> : posts.loading ? <Loading /> : posts.error ? <div className="notice bad">{posts.error}</div> : !posts.data?.length ? (
               <div className="note">No recent posts found.</div>
             ) : (
-              <div className="post-grid" role="radiogroup" aria-label="Posts">
-                {posts.data.map((p) => {
-                  const pick = () => setAd({ postId: p.id, postPreview: p.image, postMedia: p.media || [], postText: p.text || '', postHeadline: p.headline || '', postDescription: p.description || '' });
-                  const isVideo = (p.media || []).some((m) => m.type === 'video');
-                  const many = (p.media || []).length > 1;
-                  return (
-                    <div key={p.id} role="radio" tabIndex={0} aria-checked={ad.postId === p.id} className={`post ${ad.postId === p.id ? 'on' : ''}`} onClick={pick} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}>
-                      <span className="thumb" style={{ backgroundImage: p.image ? `url("${p.image}")` : undefined }}>
-                        {isVideo || many ? (
-                          <button type="button" className="play-chip" onClick={(e) => { e.stopPropagation(); setPlaying(p); }} aria-label={isVideo ? 'Play video' : 'View all items'}>
-                            {isVideo ? <><Play size={12} fill="#fff" color="#fff" /> Play</> : `View ${p.media!.length}`}
-                          </button>
-                        ) : null}
-                      </span>
-                      <span className="cap">{p.text ? p.text.slice(0, 70) : 'No caption'}</span>
-                      <span className="when">{p.time ? new Date(p.time).toLocaleDateString('en-IN') : ''}{p.type === 'REELS' ? ' · Reel' : isVideo ? ' · Video' : many ? ' · Carousel' : ''}</span>
-                    </div>
-                  );
-                })}
-              </div>
+              <>
+                <TextInput value={postQuery} onChange={(e) => setPostQuery(e.target.value)} placeholder="Search by post ID or caption" aria-label="Search posts" />
+                {shownPosts.length ? (
+                  <div className="post-grid" role="radiogroup" aria-label="Posts" style={{ marginTop: 10 }}>
+                    {shownPosts.map((p) => {
+                      const pick = () => setAd({ postId: p.id, postPreview: p.image, postMedia: p.media || [], postText: p.text || '', postHeadline: p.headline || '', postDescription: p.description || '' });
+                      const isVideo = (p.media || []).some((m) => m.type === 'video');
+                      const many = (p.media || []).length > 1;
+                      return (
+                        <div key={p.id} role="radio" tabIndex={0} aria-checked={ad.postId === p.id} className={`post ${ad.postId === p.id ? 'on' : ''}`} onClick={pick} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}>
+                          <span className="thumb" style={{ backgroundImage: p.image ? `url("${p.image}")` : undefined }}>
+                            {isVideo || many ? (
+                              <button type="button" className="play-chip" onClick={(e) => { e.stopPropagation(); setPlaying(p); }} aria-label={isVideo ? 'Play video' : 'View all items'}>
+                                {isVideo ? <><Play size={12} fill="#fff" color="#fff" /> Play</> : `View ${p.media!.length}`}
+                              </button>
+                            ) : null}
+                          </span>
+                          <span className="cap">{p.text ? p.text.slice(0, 70) : 'No caption'}</span>
+                          <span className="when">{p.time ? new Date(p.time).toLocaleDateString('en-IN') : ''}{p.type === 'REELS' ? ' · Reel' : isVideo ? ' · Video' : many ? ' · Carousel' : ''}</span>
+                          <span className="when" style={{ wordBreak: 'break-all' }}>
+                            ID {p.id}{' '}
+                            <button type="button" className="btn-link" style={{ fontSize: 10.5 }} onKeyDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); copyId(p.id); }}>{copiedId === p.id ? 'Copied' : 'Copy'}</button>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : <div className="note" style={{ marginTop: 10 }}>No posts match.</div>}
+              </>
             )}
           </Field>
           <div className="row field">
