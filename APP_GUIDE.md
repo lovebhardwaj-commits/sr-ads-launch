@@ -54,7 +54,7 @@ Pick the type:
 - **Image or video ad.** One creative with its own text, link and button.
   - *Upload.* Images: JPG or PNG under 3 MB. Videos: MP4 or MOV up to 1 GB. A video is cut into 3.5 MB pieces that go through this app's server to Meta; a frame is taken as its thumbnail; Meta then processes it (a progress percentage and a **Check now** link show while it does).
   - *Write the text with AI* (only when `OPENROUTER_API_KEY` is set). See section 7.
-- **Existing post.** Promote a Facebook or Instagram post as it is (it keeps its own text, media and engagement). Recent posts are listed with playable previews.
+- **Existing post.** Promote a Facebook or Instagram post. The post keeps its own text, headline, description, media and engagement; these cannot be changed, so AI text does not apply here. Recent posts are listed with playable previews. You choose the **Call to action** button (Shop now, Buy now, Order now, Get offer, Learn more, Sign up, Book now) and the **Website URL** it opens, which is prefilled from the Page's website. Both are required.
 
 All ad types also have an optional **Tracking** part: a dataset (pixel) so Ads Manager tracks website events, and URL parameters (UTM) added to every link.
 
@@ -100,6 +100,7 @@ Switching ad account mid-flow keeps the ad's name, Page, text and format, and cl
 - Everything is created paused first; money is never spent on a failed launch.
 - Meta's own errors are shown as they come back.
 - Catalog ads need a Sales campaign, a catalog, a product set, a dataset linked to the catalog, and products in the catalog.
+- Existing-post ads need a post, a button and a website link.
 
 ## 6. Under the hood
 
@@ -178,3 +179,4 @@ Shown for image and video ads when `OPENROUTER_API_KEY` is set. It looks at the 
 - AI text, the audience-size gauge, interest suggestions and the custom audience list depend on what Meta and the AI service allow for the account; when one is unavailable it hides itself or shows a short message.
 - The low-resolution video copy needs a recent Chrome or Edge (newer Safari and Firefox work too); otherwise the app uses the video on Meta.
 - The Meta app's Advanced access and the ad account's own settings (for example a locked attribution window) can make Meta reject a launch; the message is shown as Meta sent it.
+- On an existing post, Meta takes the button and link we send together with the post. Meta's documentation shows this for Facebook posts (with a Page-visit button) and for Instagram posts; it should also work for Shop now and the other buttons, but check the first real launch in Ads Manager.
