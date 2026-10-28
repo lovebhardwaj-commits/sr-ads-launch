@@ -115,8 +115,6 @@ export default function StandardAdSection({ form, setAd, accountId }: {
   // Search covers the posts loaded so far, by ID (as shown on the card, or the full Page_Post form) or by words in the caption.
   const loaded = [...(posts.data?.items || []), ...extra];
   const allPosts = found && !loaded.some((p) => p.id === found.id) ? [found, ...loaded] : loaded;
-  const times = loaded.map((p) => new Date(p.time).getTime()).filter((t) => t > 0);
-  const oldest = times.length ? new Date(Math.min(...times)).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
   const q = postQuery.trim().toLowerCase();
   const shownPosts = allPosts.filter((p) => !q || p.id.toLowerCase().includes(q) || (p.text || '').toLowerCase().includes(q));
   const looksLikeId = /^\d{6,}(_\d+)?$/.test(q);
@@ -322,10 +320,14 @@ export default function StandardAdSection({ form, setAd, accountId }: {
             ) : (
               <>
                 <TextInput value={postQuery} onChange={(e) => setPostQuery(e.target.value)} placeholder="Search by post ID or caption" aria-label="Search posts" />
-                <div className="hint" style={{ margin: '6px 0 0' }}>
-                  Showing the {loaded.length} most recent posts{oldest ? `, back to ${oldest}` : ''}{nextCursor ? '' : '. That is all of them'}. Search covers these.{' '}
-                  {nextCursor ? <button type="button" className="btn-link" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more'}</button> : null}
-                </div>
+                {/* How many posts are loaded; hidden while searching, when the list below is the result of the search. */}
+                {!q ? (
+                  <div className="hint" style={{ margin: '6px 0 0' }}>
+                    {nextCursor ? (
+                      <>Showing the {loaded.length} most recent posts. <button type="button" className="btn-link" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more'}</button></>
+                    ) : `Showing all ${loaded.length} ${loaded.length === 1 ? 'post' : 'posts'}.`}
+                  </div>
+                ) : null}
                 {moreError ? <div className="notice bad" style={{ marginTop: 8 }}>{moreError}</div> : null}
                 {shownPosts.length ? (
                   <div className="post-grid" role="radiogroup" aria-label="Posts" style={{ marginTop: 10 }}>
@@ -354,7 +356,7 @@ export default function StandardAdSection({ form, setAd, accountId }: {
                   <div className="note" style={{ marginTop: 10 }}>No loaded post matches.{' '}
                     {looksLikeId
                       ? <button type="button" className="btn-link" onClick={() => lookUp(q)} disabled={looking}>{looking ? 'Looking…' : 'Look up this ID on Meta'}</button>
-                      : nextCursor ? 'Load more to search older posts.' : null}
+                      : nextCursor ? <button type="button" className="btn-link" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more posts'}</button> : null}
                   </div>
                 )}
               </>
