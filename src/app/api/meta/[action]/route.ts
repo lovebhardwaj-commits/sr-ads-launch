@@ -25,6 +25,36 @@ async function safe<T>(fn: () => Promise<T>): Promise<T | { unavailable: string 
   try { return await fn(); } catch (e) { return { unavailable: (e as Error).message }; }
 }
 
+// Existing posts to promote: what is asked of Meta for each, and how a post is shaped for the app.
+const POSTS_PER_PAGE = 25;
+const IG_POST_FIELDS = 'id,caption,media_type,media_product_type,media_url,thumbnail_url,timestamp,permalink,children{media_type,media_url,thumbnail_url}';
+// A Facebook link post also carries the headline and description shown under it (title, description).
+const FB_POST_FIELDS = 'id,message,full_picture,created_time,permalink_url,attachments{media_type,media,title,description,subattachments{media_type,media}}';
+type Paged = { data: any[]; paging?: { cursors?: { after?: string }; next?: string } };
+const nextCursor = (res: Paged): string | null => (res.paging?.next ? res.paging.cursors?.after || null : null);
+
+// Each post carries its playable media: images, videos (with poster) and every item of a carousel.
+const igItem = (m: any) => (m.media_type === 'VIDEO' ? { type: 'video', url: m.media_url || '', poster: m.thumbnail_url || '' } : { type: 'image', url: m.media_url || m.thumbnail_url || '' });
+const igPost = (m: any) => ({
+  id: m.id, text: m.caption || '', image: m.thumbnail_url || m.media_url || '', time: m.timestamp, link: m.permalink,
+  type: m.media_product_type === 'REELS' ? 'REELS' : m.media_type,
+  media: (m.media_type === 'CAROUSEL_ALBUM' ? (m.children?.data || []).map(igItem) : [igItem(m)]).filter((x: any) => x.url),
+});
+const fbItem = (a: any) => (/video/i.test(a?.media_type || '') && a?.media?.source
+  ? { type: 'video', url: a.media.source, poster: a.media?.image?.src || '' }
+  : { type: 'image', url: a?.media?.image?.src || '' });
+const fbPost = (p: any) => {
+  const att = p.attachments?.data?.[0];
+  const subs = att?.subattachments?.data || [];
+  const media = (subs.length ? subs.map(fbItem) : att ? [fbItem(att)] : []).filter((x: any) => x.url);
+  return {
+    id: p.id, text: p.message || '', image: p.full_picture || '', headline: att?.title || '', description: att?.description || '',
+    type: media.some((x: any) => x.type === 'video') ? 'VIDEO' : subs.length > 1 ? 'CAROUSEL_ALBUM' : 'POST',
+    time: p.created_time, link: p.permalink_url,
+    media: media.length ? media : p.full_picture ? [{ type: 'image', url: p.full_picture }] : [],
+  };
+};
+
 async function handleGet(action: string, q: URLSearchParams, token: string): Promise<any> {
   switch (action) {
     case 'adaccounts':
@@ -181,32 +211,30 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
     }
 
     case 'posts': {
-      // Recent posts to promote as an existing-post ad.
+      // Existing posts to promote, newest first, 25 at a time. `after` is the cursor Meta gave for the next 25.
       const page = need(q.get('page'), 'page');
-      // Each post carries its playable media: images, videos (with poster) and every item of a carousel.
+      const params: any = { limit: POSTS_PER_PAGE };
+      if (q.get('after')) params.after = q.get('after');
       if (q.get('source') === 'INSTAGRAM') {
         const ig = need(q.get('ig'), 'Instagram account');
-        const res = await graph.get<{ data: any[] }>(`${ig}/media`, token, { fields: 'id,caption,media_type,media_product_type,media_url,thumbnail_url,timestamp,permalink,children{media_type,media_url,thumbnail_url}', limit: 24 });
-        const item = (m: any) => (m.media_type === 'VIDEO' ? { type: 'video', url: m.media_url || '', poster: m.thumbnail_url || '' } : { type: 'image', url: m.media_url || m.thumbnail_url || '' });
-        return res.data.map((m) => ({
-          id: m.id, text: m.caption || '', image: m.thumbnail_url || m.media_url || '', time: m.timestamp, link: m.permalink,
-          type: m.media_product_type === 'REELS' ? 'REELS' : m.media_type,
-          media: (m.media_type === 'CAROUSEL_ALBUM' ? (m.children?.data || []).map(item) : [item(m)]).filter((x: any) => x.url),
-        }));
+        const res = await graph.get<Paged>(`${ig}/media`, token, { fields: IG_POST_FIELDS, ...params });
+        return { items: res.data.map(igPost), after: nextCursor(res) };
       }
       // Page posts need the Page's own token, read server-side and never sent to the browser.
       const pg = await graph.get<{ access_token?: string }>(page, token, { fields: 'access_token' });
-      // A link post also carries the headline and description Facebook shows under it (title, description).
-      const res = await graph.get<{ data: any[] }>(`${page}/published_posts`, pg.access_token || token, { fields: 'id,message,full_picture,created_time,permalink_url,attachments{media_type,media,title,description,subattachments{media_type,media}}', limit: 24 });
-      const fbItem = (a: any) => (/video/i.test(a?.media_type || '') && a?.media?.source
-        ? { type: 'video', url: a.media.source, poster: a.media?.image?.src || '' }
-        : { type: 'image', url: a?.media?.image?.src || '' });
-      return res.data.map((p) => {
-        const att = p.attachments?.data?.[0];
-        const subs = att?.subattachments?.data || [];
-        const media = (subs.length ? subs.map(fbItem) : att ? [fbItem(att)] : []).filter((x: any) => x.url);
-        return { id: p.id, text: p.message || '', image: p.full_picture || '', headline: att?.title || '', description: att?.description || '', type: media.some((x: any) => x.type === 'video') ? 'VIDEO' : subs.length > 1 ? 'CAROUSEL_ALBUM' : 'POST', time: p.created_time, link: p.permalink_url, media: media.length ? media : p.full_picture ? [{ type: 'image', url: p.full_picture }] : [] };
-      });
+      const res = await graph.get<Paged>(`${page}/published_posts`, pg.access_token || token, { fields: FB_POST_FIELDS, ...params });
+      return { items: res.data.map(fbPost), after: nextCursor(res) };
+    }
+
+    case 'post': {
+      // One post by its ID, for a post older than the ones loaded. Facebook: the part after the underscore is enough.
+      const page = need(q.get('page'), 'page');
+      const id = need(q.get('id'), 'post ID');
+      if (!/^\d+(_\d+)?$/.test(id)) throw new GraphError({ message: 'That is not a valid post ID.' });
+      if (q.get('source') === 'INSTAGRAM') return igPost(await graph.get<any>(id, token, { fields: IG_POST_FIELDS }));
+      if (!/^\d+$/.test(page)) throw new GraphError({ message: 'Invalid Page' });
+      const pg = await graph.get<{ access_token?: string }>(page, token, { fields: 'access_token' });
+      return fbPost(await graph.get<any>(id.includes('_') ? id : `${page}_${id}`, pg.access_token || token, { fields: FB_POST_FIELDS }));
     }
 
     case 'catalog-performance': {
