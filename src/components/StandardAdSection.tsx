@@ -13,7 +13,10 @@ import TrackingFields from './TrackingFields';
 import { Field, Loading, SearchSelect, Segmented, Select, TextInput, Toggle } from './ui';
 
 interface Page { id: string; name: string; website?: string; instagram_business_account?: { id: string; username?: string } }
-interface Post { id: string; text: string; image: string; type: string; time: string; link?: string; media?: PostMedia[] }
+interface Post { id: string; text: string; image: string; type: string; time: string; link?: string; media?: PostMedia[]; headline?: string; description?: string }
+
+/** What the preview shows of a post once it is picked, and what to clear when the post changes. */
+const NO_POST = { postId: '', postPreview: '', postMedia: [] as PostMedia[], postText: '', postHeadline: '', postDescription: '' };
 
 const MAX_BYTES = 3 * 1024 * 1024;
 const MAX_VIDEO = 1_000_000_000;
@@ -186,7 +189,7 @@ export default function StandardAdSection({ form, setAd, accountId }: {
         {pages.loading ? <Loading /> : pages.error ? <div className="notice bad">{pages.error}</div> : (
           <SearchSelect
             value={ad.pageId}
-            onChange={(v) => setAd({ pageId: v, postId: '', postPreview: '' })}
+            onChange={(v) => setAd({ pageId: v, ...NO_POST })}
             ariaLabel="Facebook Page"
             noun="Pages"
             placeholder="Select a Page..."
@@ -250,7 +253,7 @@ export default function StandardAdSection({ form, setAd, accountId }: {
           <Field label="Post from">
             <Segmented
               value={ad.postSource}
-              onChange={(v) => setAd({ postSource: v, postId: '', postPreview: '' })}
+              onChange={(v) => setAd({ postSource: v, ...NO_POST })}
               options={[{ key: 'FACEBOOK', label: 'Facebook Page' }, { key: 'INSTAGRAM', label: 'Instagram account', disabled: !ig, title: !ig ? 'This Page has no connected Instagram account' : undefined }]}
             />
           </Field>
@@ -260,7 +263,7 @@ export default function StandardAdSection({ form, setAd, accountId }: {
             ) : (
               <div className="post-grid" role="radiogroup" aria-label="Posts">
                 {posts.data.map((p) => {
-                  const pick = () => setAd({ postId: p.id, postPreview: p.image, postMedia: p.media || [] });
+                  const pick = () => setAd({ postId: p.id, postPreview: p.image, postMedia: p.media || [], postText: p.text || '', postHeadline: p.headline || '', postDescription: p.description || '' });
                   const isVideo = (p.media || []).some((m) => m.type === 'video');
                   const many = (p.media || []).length > 1;
                   return (

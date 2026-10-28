@@ -196,7 +196,8 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
       }
       // Page posts need the Page's own token, read server-side and never sent to the browser.
       const pg = await graph.get<{ access_token?: string }>(page, token, { fields: 'access_token' });
-      const res = await graph.get<{ data: any[] }>(`${page}/published_posts`, pg.access_token || token, { fields: 'id,message,full_picture,created_time,permalink_url,attachments{media_type,media,subattachments{media_type,media}}', limit: 24 });
+      // A link post also carries the headline and description Facebook shows under it (title, description).
+      const res = await graph.get<{ data: any[] }>(`${page}/published_posts`, pg.access_token || token, { fields: 'id,message,full_picture,created_time,permalink_url,attachments{media_type,media,title,description,subattachments{media_type,media}}', limit: 24 });
       const fbItem = (a: any) => (/video/i.test(a?.media_type || '') && a?.media?.source
         ? { type: 'video', url: a.media.source, poster: a.media?.image?.src || '' }
         : { type: 'image', url: a?.media?.image?.src || '' });
@@ -204,7 +205,7 @@ async function handleGet(action: string, q: URLSearchParams, token: string): Pro
         const att = p.attachments?.data?.[0];
         const subs = att?.subattachments?.data || [];
         const media = (subs.length ? subs.map(fbItem) : att ? [fbItem(att)] : []).filter((x: any) => x.url);
-        return { id: p.id, text: p.message || '', image: p.full_picture || '', type: media.some((x: any) => x.type === 'video') ? 'VIDEO' : subs.length > 1 ? 'CAROUSEL_ALBUM' : 'POST', time: p.created_time, link: p.permalink_url, media: media.length ? media : p.full_picture ? [{ type: 'image', url: p.full_picture }] : [] };
+        return { id: p.id, text: p.message || '', image: p.full_picture || '', headline: att?.title || '', description: att?.description || '', type: media.some((x: any) => x.type === 'video') ? 'VIDEO' : subs.length > 1 ? 'CAROUSEL_ALBUM' : 'POST', time: p.created_time, link: p.permalink_url, media: media.length ? media : p.full_picture ? [{ type: 'image', url: p.full_picture }] : [] };
       });
     }
 
