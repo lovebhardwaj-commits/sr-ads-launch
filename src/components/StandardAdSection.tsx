@@ -23,6 +23,14 @@ const NO_POST = { postId: '', postPreview: '', postMedia: [] as PostMedia[], pos
 /** The post ID as Ads Manager shows and searches it: a Facebook post ID is `PageID_PostID`, and only the part after the underscore is used. */
 const shortId = (id: string) => id.split('_').pop() || id;
 
+/** What a post with several items holds, in words: "8 photos", or "6 photos · 2 videos". */
+function mediaLabel(media: PostMedia[]): string {
+  const photos = media.filter((m) => m.type === 'image').length;
+  const videos = media.length - photos;
+  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  return [photos ? count(photos, 'photo', 'photos') : '', videos ? count(videos, 'video', 'videos') : ''].filter(Boolean).join(' · ');
+}
+
 const MAX_BYTES = 3 * 1024 * 1024;
 const MAX_VIDEO = 1_000_000_000;
 // Each piece goes through this app's server, which accepts up to 4.5 MB per request.
@@ -323,19 +331,20 @@ export default function StandardAdSection({ form, setAd, accountId }: {
                   <div className="post-grid" role="radiogroup" aria-label="Posts" style={{ marginTop: 10 }}>
                     {shownPosts.map((p) => {
                       const pick = () => setAd({ postId: p.id, postPreview: p.image, postMedia: p.media || [], postText: p.text || '', postHeadline: p.headline || '', postDescription: p.description || '' });
-                      const isVideo = (p.media || []).some((m) => m.type === 'video');
-                      const many = (p.media || []).length > 1;
+                      const media = p.media || [];
+                      const isVideo = media.some((m) => m.type === 'video');
+                      const many = media.length > 1;
                       return (
                         <div key={p.id} role="radio" tabIndex={0} aria-checked={ad.postId === p.id} className={`post ${ad.postId === p.id ? 'on' : ''}`} onClick={pick} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}>
                           <span className="thumb" style={{ backgroundImage: p.image ? `url("${p.image}")` : undefined }}>
                             {isVideo || many ? (
-                              <button type="button" className="play-chip" onClick={(e) => { e.stopPropagation(); setPlaying(p); }} aria-label={isVideo ? 'Play video' : 'View all items'}>
-                                {isVideo ? <><Play size={12} fill="#fff" color="#fff" /> Play</> : `View ${p.media!.length}`}
+                              <button type="button" className="play-chip" onClick={(e) => { e.stopPropagation(); setPlaying(p); }} aria-label={many ? `View all ${mediaLabel(media)}` : 'Play video'} title={many ? `View all ${mediaLabel(media)}` : 'Play video'}>
+                                {many ? mediaLabel(media) : <><Play size={12} fill="#fff" color="#fff" /> Play</>}
                               </button>
                             ) : null}
                           </span>
                           <span className="cap">{p.text ? p.text.slice(0, 70) : 'No caption'}</span>
-                          <span className="when">{p.time ? new Date(p.time).toLocaleDateString('en-IN') : ''}{p.type === 'REELS' ? ' · Reel' : isVideo ? ' · Video' : many ? ' · Carousel' : ''}</span>
+                          <span className="when">{p.time ? new Date(p.time).toLocaleDateString('en-IN') : ''}{p.type === 'REELS' ? ' · Reel' : isVideo && !many ? ' · Video' : many ? ' · Carousel' : ''}</span>
                           <span className="when" style={{ wordBreak: 'break-all' }}>ID {shortId(p.id)}</span>
                         </div>
                       );
