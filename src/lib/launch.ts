@@ -184,13 +184,15 @@ export function creativeParams(form: FormState) {
   };
 }
 
-/** Normal (non-catalog) ad creative: uploaded image, or an existing Facebook / Instagram post. */
+/** Normal (non-catalog) ad creative: uploaded image or video, or an existing Facebook / Instagram post with a button and link. */
 export function standardCreativeParams(form: FormState) {
   const ad = form.ad;
   const urlTags = buildUrlTags(ad.urlTags || {});
   const name = `${ad.name.trim() || form.adset.name.trim()} - Creative`;
+  // An existing post keeps its own text and media; the button and its link are added to the ad.
+  const postButton = { call_to_action: { type: ad.cta, value: { link: ad.link.trim() } } };
   if (ad.kind === 'POST' && ad.postSource === 'FACEBOOK') {
-    return { name, object_story_id: ad.postId, ...(urlTags ? { url_tags: urlTags } : {}) };
+    return { name, object_story_id: ad.postId, ...postButton, ...(urlTags ? { url_tags: urlTags } : {}) };
   }
   if (ad.kind === 'POST') {
     return {
@@ -198,6 +200,7 @@ export function standardCreativeParams(form: FormState) {
       object_id: ad.pageId,
       instagram_user_id: ad.instagramUserId,
       source_instagram_media_id: ad.postId,
+      ...postButton,
       ...(urlTags ? { url_tags: urlTags } : {}),
     };
   }
