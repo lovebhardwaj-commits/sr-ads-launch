@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { apiPost, errorText } from '@/lib/client-api';
 import {
-  ATTRIBUTION, BID_STRATEGIES, CATALOG_EVENTS, CONVERSION_EVENTS, CTAS, RETARGET_PRESETS, buildUrlTags, catalogAudienceSpec, currencySymbol, goalsFor, objectiveLabel,
+  ATTRIBUTION, BID_STRATEGIES, CATALOG_EVENTS, CONVERSION_EVENTS, CTAS, POST_CTAS, RETARGET_PRESETS, buildUrlTags, catalogAudienceSpec, currencySymbol, goalsFor, objectiveLabel,
 } from '@/lib/constants';
 import type { AdAccount, CampaignLite, FlowContext, FormState, LaunchResult, Mode } from '@/lib/types';
 import type { ProductSet } from './LaunchForm';
@@ -101,9 +101,9 @@ export function ReviewPanel({ mode, account, form, ctx, campaign, productSets, p
   if (ctx.needsStandardAd) {
     const ad = form.ad;
     adRows.push(['Format', ad.kind === 'POST'
-      ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post`
+      ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post, “${POST_CTAS.find((x) => x.key === ad.cta)?.label}” button`
       : `New ${ad.videoId ? 'video' : 'image'} ad${ad.imageName ? ` (${ad.imageName})` : ''}, “${CTAS.find((x) => x.key === ad.cta)?.label}” button`]);
-    if (ad.kind === 'UPLOAD') adRows.push(['Website', ad.link]);
+    adRows.push(['Website', ad.link]);
     adRows.push(['URL parameters', buildUrlTags(ad.urlTags || {}) || 'None']);
   }
   const setTotal = productSets.find((x) => x.id === a.productSetId)?.product_count;

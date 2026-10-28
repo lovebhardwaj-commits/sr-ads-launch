@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { apiPost, errorText } from '@/lib/client-api';
 import { apiGet } from '@/lib/client-api';
-import { CTAS, buildUrlTags } from '@/lib/constants';
+import { CTAS, POST_CTAS, buildUrlTags } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
 import type { AdAccount, AdsetLite, FormState, LaunchResult } from '@/lib/types';
 import { adsetFacts } from './AdsetFacts';
@@ -28,7 +28,7 @@ export function AdOnlyPanel({ account, form, target, onDone, productSets }: Prop
   const targetSet = target.promoted_object?.product_set_id;
   // The structure map above the review already names the campaign, ad set and ad, so the rows don't repeat them.
 
-  const cta = CTAS.find((x) => x.key === ad.cta)?.label;
+  const cta = (ad.kind === 'POST' ? POST_CTAS : CTAS).find((x) => x.key === ad.cta)?.label;
   const facts = adsetFacts(target, account).filter(([k]) => k !== 'Campaign' && k !== 'Ad set');
   const adsetRows: ReviewRow[] = facts;
 
@@ -37,14 +37,14 @@ export function AdOnlyPanel({ account, form, target, onDone, productSets }: Prop
   const adRows: ReviewRow[] = [];
   adRows.push(['Format', isCatalog
     ? `${ad.format === 'CAROUSEL' ? 'Carousel' : 'Single image or video'} from catalog, “${cta}” button`
-    : ad.kind === 'POST' ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post` : `New ${ad.videoId ? 'video' : 'image'} ad${ad.imageName ? ` (${ad.imageName})` : ''}, “${cta}” button`]);
+    : ad.kind === 'POST' ? `Existing ${ad.postSource === 'INSTAGRAM' ? 'Instagram' : 'Facebook'} post, “${cta}” button` : `New ${ad.videoId ? 'video' : 'image'} ad${ad.imageName ? ` (${ad.imageName})` : ''}, “${cta}” button`]);
   if (isCatalog) {
     adRows.push(['Product set', set
       ? `${set.name}${set.product_count != null ? ` · ${set.product_count.toLocaleString('en-IN')} products` : ''}${targetSet ? ' (the ad set’s own set)' : ''}`
       : targetSet ? 'The ad set’s own product set' : 'The one chosen for this ad']);
     adRows.push(['Clicks go to', ad.destination === 'APP_WEB' ? 'App, website as backup' : 'Website']);
   }
-  if (isCatalog || ad.kind === 'UPLOAD') adRows.push([isCatalog ? 'See more URL' : 'Website', ad.link]);
+  adRows.push([isCatalog ? 'See more URL' : 'Website', ad.link]);
 
   // The ad tracks website events with the chosen dataset (pixel), else the ad set’s own.
   const trackPixel = form.adset.pixelId || target.promoted_object?.pixel_id || '';

@@ -2,7 +2,7 @@
 import { ImagePlus, Play } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiPostBytes, errorText } from '@/lib/client-api';
-import { CTAS } from '@/lib/constants';
+import { CTAS, POST_CTAS } from '@/lib/constants';
 import { useAiStatus } from '@/lib/ai-client';
 import { useAsync } from '@/lib/hooks';
 import type { FormState, PostMedia } from '@/lib/types';
@@ -254,7 +254,7 @@ export default function StandardAdSection({ form, setAd, accountId }: {
               options={[{ key: 'FACEBOOK', label: 'Facebook Page' }, { key: 'INSTAGRAM', label: 'Instagram account', disabled: !ig, title: !ig ? 'This Page has no connected Instagram account' : undefined }]}
             />
           </Field>
-          <Field label="Select post" hint="The post keeps its own text, media and engagement. Its call to action can't be changed.">
+          <Field label="Select post" hint="The post keeps its own text, media and engagement. Add the button and link below.">
             {!ad.pageId ? <div className="note">Select a Page first.</div> : posts.loading ? <Loading /> : posts.error ? <div className="notice bad">{posts.error}</div> : !posts.data?.length ? (
               <div className="note">No recent posts found.</div>
             ) : (
@@ -280,6 +280,14 @@ export default function StandardAdSection({ form, setAd, accountId }: {
               </div>
             )}
           </Field>
+          <div className="row field">
+            <Field label="Call to action" hint="The button shown on the post.">
+              <Select value={ad.cta} onChange={(v) => setAd({ cta: v })} options={POST_CTAS} />
+            </Field>
+            <Field label="Website URL" hint={page && !linkEdited ? (pageWebsite(page) ? 'From the Page’s website. The button opens this link.' : 'This Page has no website listed; enter one.') : 'The button opens this link.'}>
+              <TextInput value={ad.link} onChange={(e) => { setLinkEdited(true); setAd({ link: e.target.value }); }} placeholder="https://yourstore.com" />
+            </Field>
+          </div>
         </>
       )}
 
