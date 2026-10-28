@@ -14,6 +14,8 @@ import { Field, Loading, SearchSelect, Segmented, Select, TextInput, Toggle } fr
 
 interface Page { id: string; name: string; website?: string; instagram_business_account?: { id: string; username?: string } }
 interface Post { id: string; text: string; image: string; type: string; time: string; link?: string; media?: PostMedia[]; headline?: string; description?: string }
+/** Posts come newest first, 25 at a time; `after` is the cursor for the next 25 (null when there are no more). */
+interface PostsPage { items: Post[]; after: string | null }
 
 /** What the preview shows of a post once it is picked, and what to clear when the post changes. */
 const NO_POST = { postId: '', postPreview: '', postMedia: [] as PostMedia[], postText: '', postHeadline: '', postDescription: '' };
@@ -66,15 +68,50 @@ export default function StandardAdSection({ form, setAd, accountId }: {
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState<Post | null>(null);
   const [postQuery, setPostQuery] = useState('');
+  // More posts than the first 25: what was loaded since, and the cursor for the next batch (undefined = use the first batch's).
+  const [extra, setExtra] = useState<Post[]>([]);
+  const [cursor, setCursor] = useState<string | null | undefined>(undefined);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState('');
+  // A post looked up by its ID, when it is older than the ones loaded.
+  const [found, setFound] = useState<Post | null>(null);
+  const [looking, setLooking] = useState(false);
 
-  const posts = useAsync<Post[]>(
+  const posts = useAsync<PostsPage>(
     ad.kind === 'POST' && ad.pageId && (ad.postSource === 'FACEBOOK' || ig?.id) ? `posts-${ad.pageId}-${ad.postSource}` : null,
     () => apiGet('posts', { page: ad.pageId, source: ad.postSource, ig: ig?.id }),
   );
 
-  // Find a post by its ID (as shown on the card or the full Page_Post form) or by words in its caption.
+  // A different Page or source starts the list over.
+  useEffect(() => {
+    setExtra([]); setCursor(undefined); setFound(null); setMoreError(''); setPostQuery('');
+  }, [ad.pageId, ad.postSource]);
+
+  const postArgs = { page: ad.pageId, source: ad.postSource, ig: ig?.id };
+  const nextCursor = cursor === undefined ? posts.data?.after ?? null : cursor;
+  const loadMore = async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true); setMoreError('');
+    try {
+      const r = await apiGet<PostsPage>('posts', { ...postArgs, after: nextCursor });
+      setExtra((e) => [...e, ...r.items]);
+      setCursor(r.after);
+    } catch (e) { setMoreError(errorText(e)); } finally { setLoadingMore(false); }
+  };
+  const lookUp = async (id: string) => {
+    setLooking(true); setMoreError('');
+    try { setFound(await apiGet<Post>('post', { ...postArgs, id })); }
+    catch (e) { setMoreError(errorText(e)); } finally { setLooking(false); }
+  };
+
+  // Search covers the posts loaded so far, by ID (as shown on the card, or the full Page_Post form) or by words in the caption.
+  const loaded = [...(posts.data?.items || []), ...extra];
+  const allPosts = found && !loaded.some((p) => p.id === found.id) ? [found, ...loaded] : loaded;
+  const times = loaded.map((p) => new Date(p.time).getTime()).filter((t) => t > 0);
+  const oldest = times.length ? new Date(Math.min(...times)).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
   const q = postQuery.trim().toLowerCase();
-  const shownPosts = (posts.data || []).filter((p) => !q || p.id.toLowerCase().includes(q) || (p.text || '').toLowerCase().includes(q));
+  const shownPosts = allPosts.filter((p) => !q || p.id.toLowerCase().includes(q) || (p.text || '').toLowerCase().includes(q));
+  const looksLikeId = /^\d{6,}(_\d+)?$/.test(q);
 
   // Product tokens only work in catalog ads; clear them if the text came from a catalog setup.
   useEffect(() => {
@@ -272,11 +309,16 @@ export default function StandardAdSection({ form, setAd, accountId }: {
             />
           </Field>
           <Field label="Select post" hint="The post keeps its own text, media and engagement. Add the button and link below. Each post shows its ID, so you can find the same post in Ads Manager.">
-            {!ad.pageId ? <div className="note">Select a Page first.</div> : posts.loading ? <Loading /> : posts.error ? <div className="notice bad">{posts.error}</div> : !posts.data?.length ? (
+            {!ad.pageId ? <div className="note">Select a Page first.</div> : posts.loading ? <Loading /> : posts.error ? <div className="notice bad">{posts.error}</div> : !posts.data?.items.length ? (
               <div className="note">No recent posts found.</div>
             ) : (
               <>
                 <TextInput value={postQuery} onChange={(e) => setPostQuery(e.target.value)} placeholder="Search by post ID or caption" aria-label="Search posts" />
+                <div className="hint" style={{ margin: '6px 0 0' }}>
+                  Showing the {loaded.length} most recent posts{oldest ? `, back to ${oldest}` : ''}{nextCursor ? '' : '. That is all of them'}. Search covers these.{' '}
+                  {nextCursor ? <button type="button" className="btn-link" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more'}</button> : null}
+                </div>
+                {moreError ? <div className="notice bad" style={{ marginTop: 8 }}>{moreError}</div> : null}
                 {shownPosts.length ? (
                   <div className="post-grid" role="radiogroup" aria-label="Posts" style={{ marginTop: 10 }}>
                     {shownPosts.map((p) => {
@@ -299,7 +341,13 @@ export default function StandardAdSection({ form, setAd, accountId }: {
                       );
                     })}
                   </div>
-                ) : <div className="note" style={{ marginTop: 10 }}>No posts match.</div>}
+                ) : (
+                  <div className="note" style={{ marginTop: 10 }}>No loaded post matches.{' '}
+                    {looksLikeId
+                      ? <button type="button" className="btn-link" onClick={() => lookUp(q)} disabled={looking}>{looking ? 'Looking…' : 'Look up this ID on Meta'}</button>
+                      : nextCursor ? 'Load more to search older posts.' : null}
+                  </div>
+                )}
               </>
             )}
           </Field>
