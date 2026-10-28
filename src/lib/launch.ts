@@ -192,9 +192,11 @@ export function standardCreativeParams(form: FormState) {
   // An existing post keeps its own text and media; the button and its link are added to the ad.
   const postButton = { call_to_action: { type: ad.cta, value: { link: ad.link.trim() } } };
   if (ad.kind === 'POST' && ad.postSource === 'FACEBOOK') {
-    return { name, object_story_id: ad.postId, ...postButton, ...(urlTags ? { url_tags: urlTags } : {}) };
+    // The Page's connected Instagram account goes with a Facebook post, so the ad can run on Instagram as that account.
+    return { name, object_story_id: ad.postId, ...(ad.instagramUserId ? { instagram_user_id: ad.instagramUserId } : {}), ...postButton, ...(urlTags ? { url_tags: urlTags } : {}) };
   }
   if (ad.kind === 'POST') {
+    // An Instagram post runs with its Facebook Page (object_id) and the Instagram account.
     return {
       name,
       object_id: ad.pageId,
@@ -231,6 +233,23 @@ export function standardCreativeParams(form: FormState) {
   return { name, object_story_spec: story, ...(urlTags ? { url_tags: urlTags } : {}) };
 }
 
+/**
+ * Creates the creative. For a Facebook post the Instagram account is an extra: if Meta refuses it,
+ * the creative is created once more without it, so the launch does not fail over it.
+ */
+async function postCreative(act: string, token: string, params: any): Promise<{ id: string }> {
+  try {
+    return await graph.post<{ id: string }>(`${act}/adcreatives`, token, params);
+  } catch (e) {
+    if (e instanceof GraphError && params.object_story_id && params.instagram_user_id) {
+      const without = { ...params };
+      delete without.instagram_user_id;
+      return graph.post<{ id: string }>(`${act}/adcreatives`, token, without);
+    }
+    throw e;
+  }
+}
+
 /** Ad-level website-event tracking (Ads Manager: Tracking → Website events) for the dataset (pixel). */
 function tracking(pixelId?: string) {
   return pixelId ? { tracking_specs: [{ 'action.type': ['offsite_conversion'], fb_pixel: [pixelId] }] } : {};
@@ -255,7 +274,7 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
       const params = isCatalogAd
         ? creativeParams({ ...form, adset: { ...form.adset, productSetId: targetSet || form.adset.productSetId } })
         : standardCreativeParams(form);
-      const creative = await graph.post<{ id: string }>(`${act}/adcreatives`, token, params);
+      const creative = await postCreative(act, token, params);
       result.created.creative = { id: creative.id };
       step = 'ad';
       const adName = form.ad.name.trim() || `${target.name} - ${isCatalogAd ? 'Catalog ad' : 'Ad'}`;
@@ -300,7 +319,7 @@ export async function launch(req: LaunchRequest, token: string): Promise<LaunchR
     // 3. The ad: a catalog template, or a normal ad from an uploaded image / video or an existing post
     if (ctx.needsAd || ctx.needsStandardAd) {
       step = 'creative';
-      const creative = await graph.post<{ id: string }>(`${act}/adcreatives`, token, ctx.needsAd ? creativeParams(form) : standardCreativeParams(form));
+      const creative = await postCreative(act, token, ctx.needsAd ? creativeParams(form) : standardCreativeParams(form));
       result.created.creative = { id: creative.id };
       step = 'ad';
       const adName = form.ad.name.trim() || `${form.adset.name.trim()} - ${ctx.needsAd ? 'Catalog ad' : 'Ad'}`;

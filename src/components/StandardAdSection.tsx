@@ -66,7 +66,6 @@ export default function StandardAdSection({ form, setAd, accountId }: {
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState<Post | null>(null);
   const [postQuery, setPostQuery] = useState('');
-  const [copiedId, setCopiedId] = useState('');
 
   const posts = useAsync<Post[]>(
     ad.kind === 'POST' && ad.pageId && (ad.postSource === 'FACEBOOK' || ig?.id) ? `posts-${ad.pageId}-${ad.postSource}` : null,
@@ -76,13 +75,6 @@ export default function StandardAdSection({ form, setAd, accountId }: {
   // Find a post by its ID (as shown on the card or the full Page_Post form) or by words in its caption.
   const q = postQuery.trim().toLowerCase();
   const shownPosts = (posts.data || []).filter((p) => !q || p.id.toLowerCase().includes(q) || (p.text || '').toLowerCase().includes(q));
-  const copyId = async (id: string) => {
-    try {
-      await navigator.clipboard.writeText(id);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId((c) => (c === id ? '' : c)), 1500);
-    } catch { /* clipboard blocked: the ID is still on screen to select */ }
-  };
 
   // Product tokens only work in catalog ads; clear them if the text came from a catalog setup.
   useEffect(() => {
@@ -93,6 +85,7 @@ export default function StandardAdSection({ form, setAd, accountId }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ad.kind]);
 
+  // The Page's connected Instagram account is used by default (and goes with a Facebook post too).
   useEffect(() => {
     setAd({ instagramUserId: ig?.id || '' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -223,6 +216,11 @@ export default function StandardAdSection({ form, setAd, accountId }: {
           )}
         </Field>
       ) : null}
+      {page && ad.kind === 'POST' ? (
+        <p className="hint" style={{ margin: '0 0 12px' }}>
+          {ig ? <>Runs with the Facebook Page and Instagram account <span className="strong">@{ig.username || ig.id}</span>.</> : 'This Page has no connected Instagram account, so the ad runs with the Facebook Page only.'}
+        </p>
+      ) : null}
 
 
       {ad.kind === 'UPLOAD' ? (
@@ -285,7 +283,6 @@ export default function StandardAdSection({ form, setAd, accountId }: {
                       const pick = () => setAd({ postId: p.id, postPreview: p.image, postMedia: p.media || [], postText: p.text || '', postHeadline: p.headline || '', postDescription: p.description || '' });
                       const isVideo = (p.media || []).some((m) => m.type === 'video');
                       const many = (p.media || []).length > 1;
-                      const sid = shortId(p.id);
                       return (
                         <div key={p.id} role="radio" tabIndex={0} aria-checked={ad.postId === p.id} className={`post ${ad.postId === p.id ? 'on' : ''}`} onClick={pick} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}>
                           <span className="thumb" style={{ backgroundImage: p.image ? `url("${p.image}")` : undefined }}>
@@ -297,10 +294,7 @@ export default function StandardAdSection({ form, setAd, accountId }: {
                           </span>
                           <span className="cap">{p.text ? p.text.slice(0, 70) : 'No caption'}</span>
                           <span className="when">{p.time ? new Date(p.time).toLocaleDateString('en-IN') : ''}{p.type === 'REELS' ? ' · Reel' : isVideo ? ' · Video' : many ? ' · Carousel' : ''}</span>
-                          <span className="when" style={{ wordBreak: 'break-all' }}>
-                            ID {sid}{' '}
-                            <button type="button" className="btn-link" style={{ fontSize: 10.5 }} onKeyDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); copyId(sid); }}>{copiedId === sid ? 'Copied' : 'Copy'}</button>
-                          </span>
+                          <span className="when" style={{ wordBreak: 'break-all' }}>ID {shortId(p.id)}</span>
                         </div>
                       );
                     })}
