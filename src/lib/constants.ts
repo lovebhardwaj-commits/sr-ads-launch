@@ -123,6 +123,13 @@ export const CTAS: Option[] = [
   { key: 'LEARN_MORE', label: 'Learn more' },
 ];
 
+/** Buttons for an existing post: the usual five plus Sign up and Book now. */
+export const POST_CTAS: Option[] = [
+  ...CTAS,
+  { key: 'SIGN_UP', label: 'Sign up' },
+  { key: 'BOOK_NOW', label: 'Book now' },
+];
+
 /** Meta's catalog retargeting presets (Ads Manager wording). */
 export const RETARGET_PRESETS: Option[] = [
   { key: 'VIEWED_OR_ATC', label: 'Viewed or added to cart but not purchased' },

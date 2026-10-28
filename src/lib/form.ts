@@ -236,6 +236,10 @@ export function validateAd(form: FormState, isCatalog: boolean, withCatalog = fa
     if (!ad.message.trim()) m.push({ key: 'ad.message', label: 'Primary text' });
     if (!validUrl) m.push({ key: 'ad.link', label: 'Website URL' });
   }
-  if (ad.kind === 'POST' && !ad.postId) m.push({ key: 'ad.postId', label: 'Post' });
+  if (ad.kind === 'POST') {
+    if (!ad.postId) m.push({ key: 'ad.postId', label: 'Post' });
+    // The post keeps its own text and media; the button and where it leads are chosen here.
+    if (!validUrl) m.push({ key: 'ad.link', label: 'Website URL' });
+  }
   return m;
 }
