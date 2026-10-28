@@ -121,6 +121,10 @@ export interface FormState {
     postPreview: string;
     /** The chosen post's media, for a playable preview (videos, carousel items) */
     postMedia: PostMedia[];
+    /** The chosen post's own caption and, for a Facebook link post, its link headline and description (shown in the preview only) */
+    postText?: string;
+    postHeadline?: string;
+    postDescription?: string;
     name: string;
     pageId: string;
     instagramUserId: string;

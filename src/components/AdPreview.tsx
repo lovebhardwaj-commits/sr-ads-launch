@@ -2,7 +2,7 @@
 import { ChevronLeft, ChevronRight, Heart, Maximize2, MessageCircle, Play, Send, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '@/lib/client-api';
-import { CTAS } from '@/lib/constants';
+import { CTAS, POST_CTAS } from '@/lib/constants';
 import { useAsync } from '@/lib/hooks';
 import type { FormState } from '@/lib/types';
 import { MediaView } from './PostMedia';
@@ -191,16 +191,30 @@ export function NormalPreview({ form }: { form: FormState }) {
   const ad = form.ad;
   const page = usePage(ad.pageId);
   const pageName = page?.name || 'Your Page';
-  const ctaLabel = CTAS.find((c) => c.key === ad.cta)?.label || 'Shop now';
+  const ctaLabel = (ad.kind === 'POST' ? POST_CTAS : CTAS).find((c) => c.key === ad.cta)?.label || 'Shop now';
+  const domain = ad.link.replace(/^https?:\/\//, '').split('/')[0].toUpperCase() || 'YOURSTORE.COM';
   if (ad.kind === 'POST') {
+    const text = ad.postText || '';
+    const caption = text.length > 280 ? `${text.slice(0, 280).trimEnd()}…` : text;
     return (
       <div className="preview" aria-label="Post preview">
         <div className="preview-tabs"><span className="label" style={{ margin: 0 }}>Preview</span></div>
         {ad.postPreview || ad.postMedia?.length ? (
           <>
             <div className="preview-head"><div className="pg">{pageName.slice(0, 1)}</div><div><div className="n">{pageName}</div><div className="s">Sponsored</div></div></div>
+            {caption ? <div className="preview-text">{caption}</div> : null}
             {ad.postMedia?.length ? <MediaView media={ad.postMedia} /> : <img src={ad.postPreview} alt="" style={{ width: '100%', borderRadius: 8, display: 'block' }} />}
-            <p className="hint">The post runs as it is, with its own text and engagement.</p>
+            <div className="p-card single" style={{ marginTop: 8 }}>
+              <div className="body">
+                <div style={{ minWidth: 0 }}>
+                  <div className="ds">{domain}</div>
+                  {ad.postHeadline ? <div className="h">{ad.postHeadline}</div> : null}
+                  {ad.postDescription ? <div className="ds">{ad.postDescription}</div> : null}
+                </div>
+                <span className="cta">{ctaLabel}</span>
+              </div>
+            </div>
+            <p className="hint">The text and headline come from the post. The button and link are the ones you chose.</p>
           </>
         ) : <div className="preview-empty">Pick a post to preview it.</div>}
       </div>
@@ -219,7 +233,7 @@ export function NormalPreview({ form }: { form: FormState }) {
         )}
         <div className="body">
           <div style={{ minWidth: 0 }}>
-            <div className="ds">{ad.link.replace(/^https?:\/\//, '').split('/')[0].toUpperCase() || 'YOURSTORE.COM'}</div>
+            <div className="ds">{domain}</div>
             <div className="h">{ad.headline || 'Headline'}</div>
           </div>
           <span className="cta">{ctaLabel}</span>
