@@ -179,7 +179,8 @@ export default function LaunchForm({ mode, account, form, setForm, campaign, onM
                 options={OBJECTIVES}
               />
             </Field>
-            {c.objective === 'OUTCOME_SALES' ? (
+            {/* Only a catalog ad has a catalog; an image, video or existing-post ad has nothing to switch, so nothing is shown. */}
+            {c.objective === 'OUTCOME_SALES' && c.catalogEnabled ? (
               <Field hint="Set by your ad.">
                 <Toggle
                   checked={c.catalogEnabled}
